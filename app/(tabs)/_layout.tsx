@@ -1,71 +1,133 @@
 import React from 'react';
-import { SymbolView } from 'expo-symbols';
-import { Link, Tabs } from 'expo-router';
-import { Platform, Pressable } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Tabs } from 'expo-router';
+import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
-import Colors from '@/constants/Colors';
-import { useColorScheme } from '@/components/useColorScheme';
-import { useClientOnlyValue } from '@/components/useClientOnlyValue';
+import { moderateScale, verticalScale } from '@/src/utils/uiScale';
+
+function TabsTopSpacer() {
+  return <View style={styles.topSpacer} />;
+}
+
+function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  return (
+    <View style={styles.tabBar}>
+      {state.routes.map((route, index) => {
+        const { options } = descriptors[route.key];
+        const label =
+          typeof options.tabBarLabel === 'string'
+            ? options.tabBarLabel
+            : typeof options.title === 'string'
+              ? options.title
+              : route.name;
+        const isFocused = state.index === index;
+
+        const onPress = () => {
+          const event = navigation.emit({
+            type: 'tabPress',
+            target: route.key,
+            canPreventDefault: true,
+          });
+
+          if (!isFocused && !event.defaultPrevented) {
+            navigation.navigate(route.name, route.params);
+          }
+        };
+
+        const onLongPress = () => {
+          navigation.emit({
+            type: 'tabLongPress',
+            target: route.key,
+          });
+        };
+
+        return (
+          <Pressable
+            key={route.key}
+            accessibilityRole="button"
+            accessibilityState={isFocused ? { selected: true } : {}}
+            onPress={onPress}
+            onLongPress={onLongPress}
+            style={styles.tabItem}>
+            <Text style={[styles.tabLabel, { color: isFocused ? '#000000' : '#838383' }]}>{label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
   return (
     <Tabs
+      tabBar={(props) => <CustomTabBar {...props} />}
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme].tint,
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
-        headerShown: useClientOnlyValue(false, true),
+        header: () => <TabsTopSpacer />,
+        headerShadowVisible: false,
+        sceneStyle: styles.scene,
       }}>
+      {/* 先按设计稿同步底部文案和基础样式，路由结构暂不调整。 */}
       <Tabs.Screen
-        name="index"
+        name="home/index"
         options={{
-          title: 'Tab One',
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{
-                ios: 'chevron.left.forwardslash.chevron.right',
-                android: 'code',
-                web: 'code',
-              }}
-              tintColor={color}
-              size={28}
-            />
-          ),
-          headerRight: () => (
-            <Link href="/modal" asChild>
-              <Pressable style={{ marginRight: 15 }}>
-                {({ pressed }) => (
-                  <SymbolView
-                    name={{ ios: 'info.circle', android: 'info', web: 'info' }}
-                    size={25}
-                    tintColor={Colors[colorScheme].text}
-                    style={{ opacity: pressed ? 0.5 : 1 }}
-                  />
-                )}
-              </Pressable>
-            </Link>
-          ),
+          title: '首页',
         }}
       />
       <Tabs.Screen
-        name="two"
+        name="projects/index"
         options={{
-          title: 'Tab Two',
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{
-                ios: 'chevron.left.forwardslash.chevron.right',
-                android: 'code',
-                web: 'code',
-              }}
-              tintColor={color}
-              size={28}
-            />
-          ),
+          title: '企划',
+        }}
+      />
+      <Tabs.Screen
+        name="market/index"
+        options={{
+          title: '市场',
+        }}
+      />
+      <Tabs.Screen
+        name="messages/index"
+        options={{
+          title: '消息',
+        }}
+      />
+      <Tabs.Screen
+        name="me/index"
+        options={{
+          title: '个人',
         }}
       />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  scene: {
+    backgroundColor: '#FFFFFF',
+  },
+  topSpacer: {
+    height: verticalScale(61),
+    backgroundColor: '#D9D9D9',
+  },
+  tabBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    height: verticalScale(64),
+    paddingBottom: verticalScale(30),
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 0,
+    elevation: 0,
+  },
+  tabItem: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tabLabel: {
+    fontFamily: 'Inter_400Regular',
+    fontWeight: '400',
+    fontSize: moderateScale(20),
+    lineHeight: moderateScale(20),
+    letterSpacing: 0,
+  },
+});
