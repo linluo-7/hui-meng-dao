@@ -1,8 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { toast } from '@/src/components/toast';
+import { socialApi, type UserSummary } from '@/src/services/socialApi';
 import { useMessagesStore } from '@/src/stores/messagesStore';
 import { scale, verticalScale } from '@/src/utils/uiScale';
 
@@ -13,20 +15,68 @@ const PAGE_SIDE_PADDING = 15;
 const LIST_ROW_H = 74;
 const AVATAR_SIZE = 58;
 
-function RowItem({ item, showFollow = false }: { item: MsgItem; showFollow?: boolean }) {
+function MsgRow({ item }: { item: MsgItem }) {
   return (
     <View style={styles.rowItem}>
-      <View style={styles.avatar} />
+      <View style={[styles.avatar, styles.avatarPlaceholder]}>
+        <Text style={styles.avatarInitial}>?</Text>
+      </View>
       <View style={styles.rowTextWrap}>
         <Text style={styles.rowTitle}>{item.title}</Text>
-        <Text style={styles.rowSub} numberOfLines={1}>
-          {item.subtitle}
-        </Text>
+        <Text style={styles.rowSub} numberOfLines={1}>{item.subtitle}</Text>
       </View>
       <View style={styles.rowRight}>
-        <Text style={styles.rowDate}>日期</Text>
-        {showFollow ? <Pressable style={styles.followBtn}><Text style={styles.followText}>关注</Text></Pressable> : <View style={styles.unreadDot} />}
+        <View style={styles.unreadDot} />
       </View>
+    </View>
+  );
+}
+
+function SuggestUserRow({ user }: { user: UserSummary }) {
+  const [following, setFollowing] = useState(user.is_following === 1);
+  const [loading, setLoading] = useState(false);
+
+  const handleFollow = useCallback(async () => {
+    setLoading(true);
+    try {
+      if (following) {
+        await socialApi.unfollow(user.id);
+        setFollowing(false);
+        toast('已取消关注');
+      } else {
+        await socialApi.follow(user.id);
+        setFollowing(true);
+        toast('关注成功');
+      }
+    } catch {
+      toast('操作失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [following, user.id]);
+
+  return (
+    <View style={styles.rowItem}>
+      <View style={[styles.avatar, !user.avatar_url && styles.avatarPlaceholder]}>
+        {user.avatar_url ? (
+          <Image source={{ uri: user.avatar_url }} style={styles.avatarImg} />
+        ) : (
+          <Text style={styles.avatarInitial}>{user.nickname?.[0] ?? '?'}</Text>
+        )}
+      </View>
+      <View style={styles.rowTextWrap}>
+        <Text style={styles.rowTitle}>{user.nickname}</Text>
+        <Text style={styles.rowSub} numberOfLines={1}>
+          {user.bio ?? `粉丝 ${user.followers_count}`}
+        </Text>
+      </View>
+      <Pressable
+        style={[styles.followBtn, following && styles.followBtnFollowing]}
+        onPress={handleFollow}
+        disabled={loading}
+      >
+        <Text style={styles.followText}>{following ? '已关注' : '+ 关注'}</Text>
+      </Pressable>
     </View>
   );
 }
@@ -34,7 +84,10 @@ function RowItem({ item, showFollow = false }: { item: MsgItem; showFollow?: boo
 export default function MessagesHomePage() {
   const router = useRouter();
   const [tab, setTab] = useState<InnerTab>('消息');
-  const { dmThreads, refreshDmThreads, loading, error } = useMessagesStore();
+  const { dmThreads, refreshDmThreads, loading: dmLoading, error } = useMessagesStore();
+  const [suggestUsers, setSuggestUsers] = useState<UserSummary[]>([]);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+
   const listItems = useMemo<MsgItem[]>(() => {
     if (tab !== '消息') {
       return Array.from({ length: 8 }).map((_, i) => ({
@@ -45,16 +98,27 @@ export default function MessagesHomePage() {
     }
     return dmThreads.map((thread) => ({ id: thread.id, title: thread.peerName, subtitle: thread.lastMessage }));
   }, [dmThreads, tab]);
-  const suggestItems = useMemo<MsgItem[]>(
-    () => [
-      { id: 's1', title: '用户名', subtitle: '介绍' },
-      { id: 's2', title: '用户名', subtitle: '介绍' },
-    ],
-    []
-  );
+
+  const loadSuggestUsers = useCallback(async () => {
+    setSuggestLoading(true);
+    try {
+      // 获取当前用户的关注列表作为推荐参考
+      // 这里用粉丝列表来展示可能感兴趣的人
+      const resp = await socialApi.getFollowers('0000001', 1, 5);
+      setSuggestUsers(resp.list);
+    } catch {
+      // ignore
+    } finally {
+      setSuggestLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void refreshDmThreads();
-  }, [refreshDmThreads]);
+    if (tab === '消息') {
+      void loadSuggestUsers();
+    }
+  }, [refreshDmThreads, tab, loadSuggestUsers]);
 
   return (
     <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safe}>
@@ -97,7 +161,7 @@ export default function MessagesHomePage() {
             <View style={styles.listWrap}>
               {listItems.slice(0, 4).map((item) => (
                 <Pressable key={item.id} onPress={() => router.push(`/dm/${item.id}` as any)}>
-                  <RowItem item={item} />
+                  <MsgRow item={item} />
                 </Pressable>
               ))}
             </View>
@@ -105,12 +169,17 @@ export default function MessagesHomePage() {
 
             <View style={styles.suggestHeader}>
               <Text style={styles.suggestTitle}>你可能感兴趣的人</Text>
-              <Text style={styles.suggestClose}>关闭</Text>
             </View>
             <View style={styles.listWrap}>
-              {suggestItems.map((item) => (
-                <RowItem key={item.id} item={item} showFollow />
-              ))}
+              {suggestLoading ? (
+                <Text style={styles.loadingText}>加载中...</Text>
+              ) : suggestUsers.length === 0 ? (
+                <Text style={styles.loadingText}>暂无推荐</Text>
+              ) : (
+                suggestUsers.map((user) => (
+                  <SuggestUserRow key={user.id} user={user} />
+                ))
+              )}
             </View>
           </>
         ) : (
@@ -188,10 +257,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  avatar: { width: scale(AVATAR_SIZE), height: scale(AVATAR_SIZE), borderRadius: 99, backgroundColor: '#666666' },
+  avatar: { width: scale(AVATAR_SIZE), height: scale(AVATAR_SIZE), borderRadius: 99, backgroundColor: '#D1D5DB', overflow: 'hidden' },
+  avatarPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  avatarImg: { width: '100%', height: '100%' },
+  avatarInitial: { fontSize: scale(22), color: '#fff', fontWeight: '700' },
   rowTextWrap: { marginLeft: scale(14), flex: 1, paddingRight: scale(10) },
   rowTitle: { fontSize: scale(34 / 2), lineHeight: scale(34 / 2), color: '#111827', fontWeight: '700' },
-  rowSub: { marginTop: verticalScale(10), fontSize: scale(16), color: '#111827' },
+  rowSub: { marginTop: verticalScale(10), fontSize: scale(16), color: '#6B7280' },
   rowRight: { alignItems: 'flex-end', justifyContent: 'center', gap: verticalScale(12), minWidth: scale(56) },
   rowDate: { fontSize: scale(16), color: '#111827', fontWeight: '500' },
   unreadDot: { width: scale(16), height: scale(16), borderRadius: 99, backgroundColor: '#FF0000' },
@@ -209,11 +281,13 @@ const styles = StyleSheet.create({
     width: scale(84),
     height: verticalScale(30),
     borderRadius: 999,
-    backgroundColor: '#FF0000',
+    backgroundColor: '#EF4444',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  followText: { color: '#000000', fontSize: scale(30 / 2), fontWeight: '700' },
+  followBtnFollowing: { backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#D1D5DB' },
+  followText: { color: '#fff', fontSize: scale(28 / 2), fontWeight: '700' },
   errorText: { color: '#B91C1C', marginTop: verticalScale(8), fontSize: scale(12) },
+  loadingText: { color: '#9CA3AF', fontSize: 13, paddingVertical: 12, textAlign: 'center' },
 });
 

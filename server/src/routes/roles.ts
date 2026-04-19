@@ -8,6 +8,16 @@ import { env } from '../config/env.js';
 
 export const rolesRouter = Router();
 
+const RELATION_TYPE_LABELS: Record<string, string> = {
+  ally: '盟友',
+  enemy: '对立',
+  romantic: '暧昧',
+  family: '亲属',
+  rival: '宿敌',
+  friend: '挚友',
+  neutral: '中立',
+};
+
 // 配置 multer 用于图片上传
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, 'uploads/roles'),
@@ -99,6 +109,54 @@ rolesRouter.get('/:id', async (req, res) => {
     isFavorited = likeRows.length > 0;
   }
 
+  // 从 role_relations 表查询关系
+  const [relations] = await pool.query<any[]>(
+    `SELECT rr.*, r2.name as related_role_name, r2.avatar_url as related_role_avatar
+     FROM role_relations rr
+     LEFT JOIN roles r2 ON rr.related_role_id = r2.id
+     WHERE rr.role_id = ?`,
+    [id],
+  );
+
+  // 从 role_relation_events 查询时间线
+  const [events] = await pool.query<any[]>(
+    `SELECT e.*, r.relation_type, r2.name as related_role_name
+     FROM role_relation_events e
+     JOIN role_relations r ON e.relation_id = r.id
+     LEFT JOIN roles r2 ON r.related_role_id = r2.id
+     WHERE r.role_id = ?
+     ORDER BY e.occurred_at DESC`,
+    [id],
+  );
+
+  // 转换为前端需要的格式
+  const relationship = {
+    nodes: [
+      { id, name: row.name, avatarUrl: row.avatar_url, role: 'main' as const },
+      ...relations.map((r: any) => ({
+        id: r.related_role_id,
+        name: r.related_role_name ?? '未知角色',
+        avatarUrl: r.related_role_avatar,
+        relation: r.relation_type,
+        role: 'related' as const,
+      })),
+    ],
+    edges: relations.map((r: any) => ({
+      source: id,
+      target: r.related_role_id,
+      label: r.relation_type,
+    })),
+  };
+
+  const timeline = events.map((e: any) => ({
+    id: e.id,
+    title: RELATION_TYPE_LABELS[e.relation_type] ?? e.relation_type,
+    content: e.description ?? '',
+    imageUrls: [],
+    createdAt: e.occurred_at,
+    relatedRoleName: e.related_role_name,
+  }));
+
   res.json({
     id: row.id,
     name: row.name,
@@ -110,8 +168,8 @@ rolesRouter.get('/:id', async (req, res) => {
     coverAspectRatio: attrs?.coverAspectRatio ?? 1,
     maxCoverHeight: attrs?.maxCoverHeight ?? 120,
     description: attrs?.description ?? '',
-    relationship: attrs?.relationship ?? null,
-    timeline: attrs?.timeline ?? [],
+    relationship: relationship.nodes.length > 1 ? relationship : null,
+    timeline,
     followersCount: row.followers_count ?? 0,
     likesCount: row.likes_count ?? 0,
     isLiked,
@@ -150,8 +208,10 @@ rolesRouter.post('/upload-images', authMiddleware, upload.single('images'), asyn
     res.status(400).json({ message: 'No file uploaded' });
     return;
   }
-  // 返回完整 URL，使用固定的 IP 地址
-  const url = `http://10.146.158.17:4000/uploads/roles/${req.file.filename}`;
+  // 动态获取请求的 host，避免硬编码 IP
+  const protocol = req.protocol;
+  const host = req.get('host');
+  const url = `${protocol}://${host}/uploads/roles/${req.file.filename}`;
   res.json({ urls: [url] });
 });
 

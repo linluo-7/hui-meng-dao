@@ -9,7 +9,11 @@ import { authRouter } from './routes/auth.js';
 import { homeRouter } from './routes/home.js';
 import { meRouter } from './routes/me.js';
 import { messagesRouter } from './routes/messages.js';
+import { notificationsRouter } from './routes/notifications.js';
+import { relationsRouter } from './routes/relations.js';
 import { rolesRouter } from './routes/roles.js';
+import { socialRouter } from './routes/social.js';
+import { worksRouter } from './routes/works.js';
 
 // 确保上传目录存在
 mkdirSync('uploads/avatars', { recursive: true });
@@ -34,7 +38,11 @@ app.use('/api/auth', authRouter);
 app.use('/api/home', authMiddleware, homeRouter);
 app.use('/api/messages', authMiddleware, messagesRouter);
 app.use('/api/me', authMiddleware, meRouter);
+app.use('/api/social', authMiddleware, socialRouter);
+app.use('/api/works', authMiddleware, worksRouter);
+app.use('/api/notifications', authMiddleware, notificationsRouter);
 app.use('/api/roles', rolesRouter);
+app.use('/api', relationsRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const message = err instanceof Error ? err.message : 'Unknown error';
