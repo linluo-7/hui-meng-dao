@@ -46,7 +46,7 @@
       "typedRoutes": true
     },
     "extra": {
-      "apiBaseUrl": "http://10.146.158.17:4000"
+      "apiBaseUrl": "http://146.56.251.112:4000"
     }
   }
 }

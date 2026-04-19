@@ -100,7 +100,8 @@ export async function initDb() {
       last_message TEXT NOT NULL,
       unread_count INT NOT NULL DEFAULT 0,
       updated_at DATETIME NOT NULL,
-      INDEX idx_dm_threads_owner_updated (owner_user_id, updated_at)
+      INDEX idx_dm_threads_owner_updated (owner_user_id, updated_at),
+      UNIQUE INDEX idx_dm_threads_unique (owner_user_id, peer_user_id)
     )
   `);
 
@@ -108,12 +109,23 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS dm_messages (
       id VARCHAR(64) PRIMARY KEY,
       thread_id VARCHAR(64) NOT NULL,
+      sender_id VARCHAR(64) NOT NULL,
       sender_type VARCHAR(16) NOT NULL,
       text TEXT NOT NULL,
       created_at DATETIME NOT NULL,
       INDEX idx_dm_messages_thread_created (thread_id, created_at)
     )
   `);
+
+  // 兼容旧 dm_messages 数据（sender_id 字段）
+  try {
+    await pool.query(`ALTER TABLE dm_messages ADD COLUMN sender_id VARCHAR(64) NOT NULL AFTER thread_id`);
+  } catch { /* 字段可能已存在 */ }
+
+  // 兼容旧 dm_threads 数据（唯一索引防止重复会话）
+  try {
+    await pool.query(`ALTER TABLE dm_threads ADD UNIQUE INDEX idx_dm_threads_unique (owner_user_id, peer_user_id)`);
+  } catch { /* 索引可能已存在 */ }
 
   // 作品表
   await pool.query(`
@@ -154,17 +166,17 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS posts (
       id VARCHAR(64) PRIMARY KEY,
       author_user_id VARCHAR(64) NOT NULL,
-      author_nickname VARCHAR(64) NOT NULL,
+      post_type VARCHAR(16) NOT NULL DEFAULT 'post',
       title VARCHAR(255) NOT NULL,
       content TEXT NULL,
-      image_urls JSON NULL,
-      cover_image_url TEXT NULL,
+      image_url TEXT NULL,
       tags JSON NULL,
-      created_at DATETIME NOT NULL,
-      ip_address VARCHAR(45) NULL,
-      likes_count INT NOT NULL DEFAULT 0,
+      likes INT NOT NULL DEFAULT 0,
       comments_count INT NOT NULL DEFAULT 0,
-      favorites_count INT NOT NULL DEFAULT 0,
+      cover_aspect_ratio DECIMAL(8,3) NOT NULL DEFAULT 1,
+      max_cover_height INT NOT NULL DEFAULT 120,
+      created_at DATETIME NOT NULL,
+      updated_at DATETIME NULL,
       INDEX idx_posts_author (author_user_id),
       INDEX idx_posts_created (created_at)
     )

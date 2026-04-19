@@ -39,6 +39,7 @@ export const dataGateway = {
     favoriteRole: (roleId: string) => rolesApi.favoriteRole(roleId),
     getComments: (roleId: string, page?: number, pageSize?: number) => rolesApi.getComments(roleId, page, pageSize),
     createComment: (roleId: string, content: string, parentCommentId?: string) => rolesApi.createComment(roleId, content, parentCommentId),
+    getMyRoles: () => apiClient.get<{ id: string; name: string; avatarUrl?: string; isPublic: boolean; followersCount: number; createdAt: string }[]>('/api/me/roles'),
   },
 
   me: {
@@ -61,8 +62,9 @@ export const dataGateway = {
     deletePost: (postId: string) => meApi.deletePost(postId),
     getPost: (postId: string) => meApi.getPost(postId) as unknown as Promise<PostItem>,
     getComments: (postId: string) => meApi.getComments(postId),
-    createComment: (postId: string, content: string, parentCommentId?: string) =>
-      meApi.createComment(postId, content, parentCommentId),
+    createComment: (postId: string, content: string, parentCommentId?: string, imageUrl?: string, mentions?: string[]) =>
+      meApi.createComment(postId, content, parentCommentId, imageUrl, mentions),
+    searchUsers: meApi.searchUsers,
   },
 
   social: {

@@ -9,6 +9,7 @@ type MessagesState = {
   loading: boolean;
   error: string | null;
   refreshDmThreads: () => Promise<void>;
+  createThread: (peerUserId: string) => Promise<{ id: string; peerUserId: string; peerName: string; peerAvatarUrl?: string }>;
   loadThreadMessages: (threadId: string) => Promise<void>;
   sendMessage: (threadId: string, text: string) => Promise<void>;
 };
@@ -26,6 +27,9 @@ export const useMessagesStore = create<MessagesState>((set) => ({
     } catch (error) {
       set({ loading: false, error: error instanceof Error ? error.message : '加载失败' });
     }
+  },
+  createThread: async (peerUserId) => {
+    return await dataGateway.messages.createThread(peerUserId);
   },
   loadThreadMessages: async (threadId) => {
     const messages = await dataGateway.messages.getThreadMessages(threadId);

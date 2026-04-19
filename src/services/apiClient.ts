@@ -2,7 +2,7 @@ import Constants from 'expo-constants';
 
 import { storage } from '@/src/services/storage';
 
-type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export class ApiError extends Error {
   status: number;
@@ -15,10 +15,12 @@ export class ApiError extends Error {
   }
 }
 
-const defaultBaseUrl =
+export const BASE_URL =
   (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ||
   process.env.EXPO_PUBLIC_API_BASE_URL ||
   'http://localhost:4000';
+
+const defaultBaseUrl = BASE_URL;
 
 let isRefreshing = false;
 let refreshPromise: Promise<boolean> | null = null;
@@ -138,6 +140,7 @@ async function request<T>(method: Method, path: string, body?: unknown): Promise
 export const apiClient = {
   get: <T>(path: string) => request<T>('GET', path),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
+  put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
   delete: <T>(path: string) => request<T>('DELETE', path),
   upload: <T>(path: string, body: FormData) => request<T>('POST', path, body),

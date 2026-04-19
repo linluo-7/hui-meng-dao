@@ -250,6 +250,7 @@ meRouter.get('/posts', async (req, res) => {
       imageUrls,
       coverImageUrl: imageUrls[0] ?? null,
       tags: [],
+      isPublic: !!row.is_public,
       likesCount: row.likes ?? 0,
       commentsCount: row.comments_count ?? 0,
       favoritesCount: 0,
@@ -258,6 +259,24 @@ meRouter.get('/posts', async (req, res) => {
       createdAt: new Date(row.created_at).toISOString(),
     };
   }));
+});
+
+// 获取当前用户的所有角色（包含私密角色）
+meRouter.get('/roles', async (req, res) => {
+  const userId = (req as any).userId as string;
+  const [rows] = await pool.query<any[]>(
+    `SELECT id, name, avatar_url, is_public, followers_count, created_at
+     FROM roles WHERE owner_user_id = ? ORDER BY created_at DESC LIMIT 50`,
+    [userId],
+  );
+  res.json(rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    avatarUrl: row.avatar_url ?? undefined,
+    isPublic: !!row.is_public,
+    followersCount: row.followers_count ?? 0,
+    createdAt: new Date(row.created_at).toISOString(),
+  })));
 });
 
 // 收藏

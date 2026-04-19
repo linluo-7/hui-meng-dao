@@ -1,14 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Image, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 
 import { useMessagesStore } from '@/src/stores/messagesStore';
 
 export default function DmChatPage() {
   const { threadId } = useLocalSearchParams<{ threadId: string }>();
-  const { threadMessages, loadThreadMessages, sendMessage } = useMessagesStore();
+  const { dmThreads, threadMessages, loadThreadMessages, sendMessage } = useMessagesStore();
   const [input, setInput] = useState('');
   const key = String(threadId || '');
+
+  // 获取当前会话的对方信息
+  const thread = dmThreads.find((t) => t.id === key);
 
   useEffect(() => {
     if (!key) return;
@@ -27,6 +30,17 @@ export default function DmChatPage() {
 
   return (
     <SafeAreaView style={styles.safe}>
+      {/* 顶部栏 */}
+      <View style={styles.header}>
+        {thread?.peerAvatarUrl ? (
+          <Image source={{ uri: thread.peerAvatarUrl }} style={styles.headerAvatar} />
+        ) : (
+          <View style={styles.headerAvatarPlaceholder}>
+            <Text style={{ fontSize: 16 }}>👤</Text>
+          </View>
+        )}
+        <Text style={styles.headerName}>{thread?.peerName ?? '私信'}</Text>
+      </View>
       <FlatList
         data={data}
         keyExtractor={(m) => m.id}
@@ -49,6 +63,10 @@ export default function DmChatPage() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F7F8FA' },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#EEF1F4', gap: 10 },
+  headerAvatar: { width: 32, height: 32, borderRadius: 16 },
+  headerAvatarPlaceholder: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
+  headerName: { fontSize: 16, fontWeight: '700', color: '#111827' },
   bubble: { maxWidth: '78%', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 16, marginBottom: 10 },
   me: { alignSelf: 'flex-end', backgroundColor: '#2563EB' },
   peer: { alignSelf: 'flex-start', backgroundColor: '#fff', borderWidth: 1, borderColor: '#EEF1F4' },

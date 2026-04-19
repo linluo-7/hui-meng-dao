@@ -3,6 +3,7 @@ import { Dimensions, FlatList, Image, Pressable, SafeAreaView, StyleSheet, Text,
 import { useRouter } from 'expo-router';
 
 import { toast } from '@/src/components/toast';
+import { dataGateway } from '@/src/services/dataGateway';
 import { useSessionStore } from '@/src/stores/sessionStore';
 import { useRolesStore } from '@/src/stores/rolesStore';
 import type { Role } from '@/src/models/types';
@@ -13,29 +14,55 @@ const PADDING = 16;
 const COLUMN_COUNT = 2;
 const CARD_WIDTH = (screenWidth - PADDING * 2 - COLUMN_GAP) / COLUMN_COUNT;
 
+type RoleFilter = 'public' | 'private' | 'mine';
+
 export default function RolesPage() {
   const router = useRouter();
   const rolesStore = useRolesStore();
   const { user } = useSessionStore();
+  const [filter, setFilter] = useState<RoleFilter>('public');
+  const [myRoles, setMyRoles] = useState<{ id: string; name: string; avatarUrl?: string; isPublic: boolean; followersCount: number; createdAt: string }[]>([]);
+  const [myRolesLoading, setMyRolesLoading] = useState(false);
 
   useEffect(() => {
     rolesStore.refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [rolesStore]);
 
-  const visibleRoles = rolesStore.items; // 显示所有公开角色
+  // 加载当前用户的所有角色（包含私密）
+  const loadMyRoles = useCallback(async () => {
+    if (!user) return;
+    setMyRolesLoading(true);
+    try {
+      const roles = await dataGateway.roles.getMyRoles();
+      setMyRoles(roles);
+    } catch (err) {
+      console.error('loadMyRoles failed:', err);
+    } finally {
+      setMyRolesLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (filter === 'mine') {
+      loadMyRoles();
+    }
+  }, [filter, loadMyRoles]);
 
   const handlePress = useCallback((roleId: string) => {
     router.push(`/roles/${roleId}` as any);
   }, [router]);
 
-  // 我的角色（仅用于编辑/删除）
-  const myRoles = user ? rolesStore.items.filter((r) => r.ownerUserId === user.id) : [];
+  const visibleRoles = filter === 'public'
+    ? rolesStore.items
+    : filter === 'private' && user
+    ? myRoles.filter((r) => !r.isPublic)
+    : filter === 'mine' && user
+    ? myRoles
+    : rolesStore.items;
 
-  const renderItem = useCallback(({ item }: { item: Role }) => {
+  const renderItem = useCallback(({ item }: { item: any }) => {
     // 优先使用 coverImageUrl，否则从 attributes 中获取
-    const coverImageUrl = item.coverImageUrl || (item.attributes as any)?.imageUrls?.[0];
-    console.log('Role card:', item.id, 'name:', item.name, 'coverImageUrl:', coverImageUrl);
+    const coverImageUrl = item.coverImageUrl || item.avatarUrl || (item.attributes as any)?.imageUrls?.[0];
     const ratio = (item.attributes as any)?.coverAspectRatio || 1;
     const coverHeight = CARD_WIDTH / ratio;
 
@@ -52,8 +79,8 @@ export default function RolesPage() {
               <Text style={{ fontSize: 32 }}>🎭</Text>
             </View>
           )}
-          <View style={[styles.badge, { backgroundColor: '#00B2FF' }]}>
-            <Text style={styles.badgeText}>人设卡</Text>
+          <View style={[styles.badge, { backgroundColor: item.isPublic === false ? '#F59E0B' : '#00B2FF' }]}>
+            <Text style={styles.badgeText}>{item.isPublic === false ? '私密' : '人设卡'}</Text>
           </View>
         </View>
         <View style={styles.body}>
@@ -62,13 +89,15 @@ export default function RolesPage() {
           </Text>
           <View style={styles.metaRow}>
             <View style={styles.followerBadge}>
-              <Text style={styles.followerText}>{item.followersCount} 关注</Text>
+              <Text style={styles.followerText}>{item.followersCount ?? 0} 关注</Text>
             </View>
           </View>
         </View>
       </Pressable>
     );
   }, [handlePress]);
+
+  const isLoading = filter === 'mine' ? myRolesLoading : rolesStore.loading;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -81,21 +110,41 @@ export default function RolesPage() {
         )}
       </View>
 
+      {/* 筛选 Tab */}
+      <View style={styles.filterRow}>
+        {[
+          { key: 'public', label: '公开' },
+          { key: 'private', label: '私密' },
+          { key: 'mine', label: '我的' },
+        ].map((tab) => (
+          <Pressable
+            key={tab.key}
+            onPress={() => setFilter(tab.key as RoleFilter)}
+            style={[styles.filterTab, filter === tab.key && styles.filterTabActive]}>
+            <Text style={[styles.filterTabText, filter === tab.key && styles.filterTabTextActive]}>
+              {tab.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
       <FlatList
-        data={visibleRoles}
+        data={visibleRoles as any[]}
         keyExtractor={(r) => r.id}
         numColumns={2}
         columnWrapperStyle={styles.row}
         contentContainerStyle={styles.list}
-        refreshing={rolesStore.loading}
-        onRefresh={rolesStore.refresh}
+        refreshing={isLoading}
+        onRefresh={filter === 'mine' ? loadMyRoles : rolesStore.refresh}
         renderItem={renderItem}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyText}>还没有角色</Text>
-            <Pressable onPress={() => router.push('/roles/create' as any)} style={styles.emptyBtn}>
-              <Text style={styles.emptyBtnText}>创建第一个角色</Text>
-            </Pressable>
+            <Text style={styles.emptyText}>暂无角色</Text>
+            {filter === 'public' && (
+              <Pressable onPress={() => router.push('/roles/create' as any)} style={styles.emptyBtn}>
+                <Text style={styles.emptyBtnText}>创建第一个角色</Text>
+              </Pressable>
+            )}
           </View>
         }
       />
@@ -106,6 +155,11 @@ export default function RolesPage() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F7F8FA' },
   header: { paddingHorizontal: PADDING, paddingTop: 10, paddingBottom: 8, flexDirection: 'row', justifyContent: 'space-between' },
+  filterRow: { flexDirection: 'row', paddingHorizontal: PADDING, paddingBottom: 8, gap: 8 },
+  filterTab: { paddingHorizontal: 14, paddingVertical: 5, borderRadius: 999, backgroundColor: '#F3F4F6' },
+  filterTabActive: { backgroundColor: '#111827' },
+  filterTabText: { fontSize: 13, color: '#6B7280', fontWeight: '600' },
+  filterTabTextActive: { color: '#fff' },
   h1: { fontSize: 18, fontWeight: '900', color: '#111827' },
   createBtn: { height: 34, borderRadius: 999, backgroundColor: '#111827', paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
   createText: { color: '#fff', fontWeight: '900' },
