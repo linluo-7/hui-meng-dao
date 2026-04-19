@@ -1,6 +1,6 @@
 # hui-meng-dao 开发状态与联调文档
 
-更新时间：2026-04-17
+更新时间：2026-04-19
 
 本文档用于快速回答四件事：
 - 现在已经实现了哪些功能
@@ -38,6 +38,7 @@
   - 加载中状态
   - 错误态 + 重试
   - 下拉刷新
+- **私密过滤**：首页 Feed 帖子列表后端 `WHERE is_public = 1`，私密帖子不进入广场流
 - 瀑布流数据由数据网关提供（真实接口或 mock 兜底）
 
 相关文件：
@@ -48,13 +49,16 @@
 - `server/src/routes/home.ts`
 
 ### 1.3 Messages（消息）
-- 会话列表接入数据层
+- 会话列表接入数据层（真实 API）
 - 支持刷新会话列表
 - 支持进入私信会话页
 - 私信会话支持发送消息并更新会话最后一条消息
+- **私信聊天页完善**：图片选择+上传按钮、KeyboardAvoidingView 键盘适配、发送按钮状态（disabled 样式）、新消息自动滚动到底部
+- **消息中心完善**：快捷入口（赞和收藏、新增关注、回复和@）可点击导航到通知页；推荐用户列表增加「私信」按钮，点击创建/获取 DM thread 并跳转
 
 相关文件：
 - `app/(tabs)/messages/index.tsx`
+- `app/dm/index.tsx`
 - `app/dm/[threadId].tsx`
 - `src/stores/messagesStore.ts`
 - `src/services/messagesApi.ts`

@@ -459,3 +459,118 @@
 - `GET /admin/stats/overview`
 - `GET /admin/exports?format=csv|xlsx`
 
+---
+
+## 9 本轮新增功能（2026-04-19）
+
+### 9.1 帖子私密可见性（首页 Feed 过滤）
+
+**行为**：首页/推荐 Feed 仅展示 `is_public = 1` 的帖子，私密帖子仅在「我的内容」中出现。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET /home/feed` | 首页推荐 Feed（已有） | 查询条件自动追加 `WHERE p.is_public = 1` |
+| `GET /me/posts` | 我的内容-帖子（已有） | 返回当前用户所有帖子，含 `isPublic` 字段 |
+| `PUT /me/posts/:postId` | 更新帖子（已有） | 支持传入 `isPublic: boolean` 切换私密状态 |
+
+**新增响应字段**（`GET /me/posts` 中的每条帖子）：
+- `isPublic: boolean` — `true` = 公开，`false` = 仅自己可见
+
+---
+
+### 9.2 人设卡私密筛选
+
+**行为**：角色广场支持「公开 / 私密 / 我的」三个 Tab 筛选；「我的」调用专属接口返回包含私密角色。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET /me/roles` | 获取当前用户所有角色（含私密） | **新增**，返回 `isPublic` 字段 |
+| `GET /me/posts?type=role` | 我的内容-人设卡列表 | 返回角色列表含 `isPublic` |
+
+**`GET /me/roles` 响应**：
+```json
+[
+  {
+    "id": "uuid",
+    "name": "角色名",
+    "avatarUrl": "https://...",
+    "isPublic": true,
+    "followersCount": 0,
+    "createdAt": "2026-04-19T..."
+  }
+]
+```
+
+---
+
+### 9.3 私信功能（真实存储）
+
+**行为**：私信对话由 Mock 改为真实 MySQL 存储，完整 CRUD。复用 `dm_threads` + `dm_messages` 表。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST /me/threads` | 创建/获取私信会话 | req: `{ peerUserId }`；自动复用已有会话 |
+| `GET /me/threads` | 私信列表 | 返回会话列表，含未读数 |
+| `GET /me/threads/:id` | 获取会话消息列表 | 自动标记已读 |
+| `POST /me/threads/:id/messages` | 发送私信 | req: `{ text }` |
+
+**`POST /me/threads` 响应**：
+```json
+{ "id": "thread-uuid", "peerUserId": "对方用户ID", "peerName": "对方昵称", "peerAvatarUrl": "https://..." }
+```
+
+**`GET /me/threads/:id` 响应**：
+```json
+[
+  { "id": "msg-uuid", "from": "me", "text": "你好", "createdAt": "2026-04-19T..." },
+  { "id": "msg-uuid-2", "from": "peer", "text": "嗨", "createdAt": "2026-04-19T..." }
+]
+```
+
+**`dm_messages` 表新增字段**（ALTER TABLE）：
+- `sender_id VARCHAR(64)` — 发送者用户 ID
+- `sender_type VARCHAR(16)` — `'me'` / `'peer'`
+
+---
+
+### 9.4 帖子评论增强（图片 + @用户）
+
+**行为**：帖子详情页评论支持图片附件和 @用户提及，后端完整支持。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET /me/posts/:postId/comments` | 获取评论列表（已有） | 新增返回 `imageUrl` 字段 |
+| `POST /me/posts/:postId/comments` | 发表评论（已有） | 新增 `imageUrl` + `mentions` 参数 |
+| `GET /me/search-users` | @用户搜索 | **新增**，keyword 模糊搜索，返回 `{ id, nickname, avatarUrl }` |
+
+**`GET /me/posts/:postId/comments` 响应**（每条评论）：
+```json
+{
+  "id": "comment-uuid",
+  "postId": "post-uuid",
+  "authorUserId": "user-uuid",
+  "authorNickname": "用户名",
+  "authorAvatarUrl": "https://...",
+  "content": "评论内容 @用户名 会高亮",
+  "imageUrl": "https://...",
+  "mentions": ["userId1"],
+  "likesCount": 0,
+  "createdAt": "2026-04-19T..."
+}
+```
+
+**`POST /me/posts/:postId/comments` 请求**：
+```json
+{ "content": "评论内容", "imageUrl": "https://...", "mentions": ["userId1"] }
+```
+
+---
+
+### 9.5 消息中心完善
+
+**行为**：消息中心接入真实 API，支持快捷入口点击跳转和私信入口。
+
+- 消息中心接入 `GET /me/threads`（真实会话列表）
+- 私信聊天页接入 `GET /me/threads/:id` + `POST /me/threads/:id/messages`
+- 私信支持发送图片（通过 `POST /me/upload-image` 上传后传 URL）
+- 键盘适配 + 消息自动滚动（前端交互优化）
