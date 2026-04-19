@@ -1,32 +1,54 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 
 import { toast } from '@/src/components/toast';
-import { useMeStore } from '@/src/stores/meStore';
+import { meApi } from '@/src/services/meApi';
 import { scale, verticalScale } from '@/src/utils/uiScale';
 
-export default function CreatePostPage() {
+export default function EditPostPage() {
   const router = useRouter();
-  const { createPost } = useMeStore();
+  const { postId } = useLocalSearchParams<{ postId: string }>();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [images, setImages] = useState<string[]>([]);
+  const [newImages, setNewImages] = useState<string[]>([]); // 新增图片（需要上传的）
+  const [removedImages, setRemovedImages] = useState<string[]>([]); // 已移除的旧图片
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [showTagInput, setShowTagInput] = useState(false);
   const [isPublic, setIsPublic] = useState(true);
-  const [posting, setPosting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  // 加载帖子数据
+  useEffect(() => {
+    if (!postId) return;
+
+    const loadPost = async () => {
+      try {
+        const post = await meApi.getPost(postId);
+        setTitle(post.title);
+        setContent(post.content || '');
+        setImages(Array.isArray(post.imageUrls) ? post.imageUrls : []);
+        setTags(post.tags || []);
+        setIsPublic(post.isPublic ?? true);
+      } catch (error: any) {
+        console.error('加载帖子失败:', error?.message || error);
+        toast('加载帖子失败');
+        router.back();
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadPost();
+  }, [postId]);
 
   // 选择图片
   const handlePickImage = async () => {
-    if (images.length >= 9) {
-      toast('最多上传9张图片');
-      return;
-    }
-
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permissionResult.granted) {
       toast('需要相册权限才能选择图片');
@@ -41,16 +63,14 @@ export default function CreatePostPage() {
     });
 
     if (!result.canceled && result.assets) {
-      const newImages = result.assets
-        .slice(0, 9 - images.length)
-        .map((asset) => asset.uri);
-      setImages([...images, ...newImages]);
+      const remaining = 9 - images.length - newImages.length;
+      if (remaining <= 0) {
+        toast('最多上传9张图片');
+        return;
+      }
+      const selected = result.assets.slice(0, remaining).map((asset) => asset.uri);
+      setNewImages([...newImages, ...selected]);
     }
-  };
-
-  // 删除图片
-  const handleRemoveImage = (index: number) => {
-    setImages(images.filter((_, i) => i !== index));
   };
 
   // 拍照
@@ -67,11 +87,11 @@ export default function CreatePostPage() {
     });
 
     if (!result.canceled && result.assets?.[0]) {
-      if (images.length >= 9) {
+      if (images.length + newImages.length >= 9) {
         toast('最多上传9张图片');
         return;
       }
-      setImages([...images, result.assets[0].uri]);
+      setNewImages([...newImages, result.assets[0].uri]);
     }
   };
 
@@ -86,6 +106,17 @@ export default function CreatePostPage() {
         { text: '取消', style: 'cancel' },
       ]
     );
+  };
+
+  // 移除图片（区分新旧图片）
+  const handleRemoveImage = (index: number, isNew: boolean) => {
+    if (isNew) {
+      setNewImages(newImages.filter((_, i) => i !== index));
+    } else {
+      const removed = images[index];
+      setRemovedImages([...removedImages, removed]);
+      setImages(images.filter((_, i) => i !== index));
+    }
   };
 
   // 添加标签
@@ -110,8 +141,8 @@ export default function CreatePostPage() {
     setTags(tags.filter((t) => t !== tag));
   };
 
-  // 发布帖子
-  const handlePost = async () => {
+  // 保存修改
+  const handleSave = async () => {
     if (!title.trim()) {
       toast('请输入标题');
       return;
@@ -121,24 +152,59 @@ export default function CreatePostPage() {
       return;
     }
 
-    setPosting(true);
+    setSaving(true);
     try {
-      await createPost({
+      // 如果有新图片，先上传
+      let uploadedUrls: string[] = [];
+      let coverAspectRatio = 0.75; // 默认3:4竖图
+      if (newImages.length > 0) {
+        uploadedUrls = (await meApi.uploadImages(newImages)).urls;
+        // 计算第一张新图片的宽高比
+        try {
+          const { width, height } = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+            Image.getSize(
+              newImages[0],
+              (w, h) => resolve({ width: w, height: h }),
+              (err) => { console.warn('getSize failed:', err); reject(err); }
+            );
+          });
+          if (height > 0) coverAspectRatio = width / height;
+        } catch {
+          console.warn('Could not get image dimensions, using default 0.75');
+        }
+      }
+
+      // 合并：保留的旧图片 + 新上传的图片
+      const allImages = [...images, ...uploadedUrls];
+
+      await meApi.updatePost(postId!, {
         title: title.trim(),
         content: content.trim(),
-        localImages: images,
+        imageUrls: allImages,
         tags,
+        coverAspectRatio,
         isPublic,
       });
-      toast('发布成功');
+
+      toast('保存成功');
       router.back();
     } catch (error: any) {
-      console.error('发布失败:', error?.message || error);
-      toast(error?.message || '发布失败');
+      console.error('保存失败:', error?.message || error);
+      toast(error?.message || '保存失败');
     } finally {
-      setPosting(false);
+      setSaving(false);
     }
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safe}>
+        <View style={styles.loading}>
+          <Text style={styles.loadingText}>加载中...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView edges={['left', 'right', 'bottom']} style={styles.safe}>
@@ -179,10 +245,23 @@ export default function CreatePostPage() {
               <Text style={styles.addImageText}>+</Text>
               <Text style={styles.addImageHint}>添加图片</Text>
             </Pressable>
-            {images.map((uri, index) => (
-              <View key={index} style={styles.imageWrapper}>
+            {/* 旧图片 */}
+            {(images || []).map((uri, index) => (
+              <View key={`old-${index}`} style={styles.imageWrapper}>
                 <Image source={{ uri }} style={styles.imagePreview} />
-                <Pressable onPress={() => handleRemoveImage(index)} style={styles.removeBtn}>
+                <Pressable onPress={() => handleRemoveImage(index, false)} style={styles.removeBtn}>
+                  <Text style={styles.removeBtnText}>×</Text>
+                </Pressable>
+              </View>
+            ))}
+            {/* 新图片 */}
+            {newImages.map((uri, index) => (
+              <View key={`new-${index}`} style={styles.imageWrapper}>
+                <Image source={{ uri }} style={styles.imagePreview} />
+                <View style={[styles.removeBtn, styles.newImageBadge]}>
+                  <Text style={styles.removeBtnText}>新</Text>
+                </View>
+                <Pressable onPress={() => handleRemoveImage(index, true)} style={styles.removeBtnActual}>
                   <Text style={styles.removeBtnText}>×</Text>
                 </Pressable>
               </View>
@@ -221,12 +300,12 @@ export default function CreatePostPage() {
           </View>
         </View>
 
-        {/* 发布按钮 */}
+        {/* 保存按钮 */}
         <Pressable
-          onPress={handlePost}
-          disabled={posting}
-          style={[styles.postBtn, posting && styles.postBtnDisabled]}>
-          <Text style={styles.postBtnText}>{posting ? '发布中...' : '发布'}</Text>
+          onPress={handleSave}
+          disabled={saving}
+          style={[styles.postBtn, saving && styles.postBtnDisabled]}>
+          <Text style={styles.postBtnText}>{saving ? '保存中...' : '保存修改'}</Text>
         </Pressable>
       </ScrollView>
 
@@ -260,6 +339,8 @@ export default function CreatePostPage() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#FFFFFF' },
+  loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { fontSize: scale(16), color: '#6B7280' },
   content: { padding: scale(16), paddingBottom: verticalScale(40) },
   inputGroup: { marginBottom: verticalScale(20) },
   label: { fontSize: scale(15), fontWeight: '700', color: '#111827', marginBottom: verticalScale(8) },
@@ -303,6 +384,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   removeBtnText: { color: '#FFFFFF', fontSize: scale(14), fontWeight: '700' },
+  newImageBadge: { backgroundColor: '#10B981', right: scale(-8 + -24) },
+  removeBtnActual: {
+    position: 'absolute',
+    top: scale(-8),
+    right: scale(-8),
+    width: scale(20),
+    height: scale(20),
+    borderRadius: 99,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: scale(8) },
   tag: {
     flexDirection: 'row',

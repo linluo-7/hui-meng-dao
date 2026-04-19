@@ -1,5 +1,6 @@
-import React, { useEffect, useState, useLayoutEffect } from 'react';
-import { Alert, Image, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useState, useLayoutEffect, useCallback } from 'react';
+import { Alert, Image, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -50,9 +51,58 @@ export default function PostDetailPage() {
   const [loading, setLoading] = useState(true);
   const [commentInputVisible, setCommentInputVisible] = useState(false);
   const [commentText, setCommentText] = useState('');
+  const [commentImage, setCommentImage] = useState<string | null>(null); // 图片评论
+  const [mentions, setMentions] = useState<string[]>([]); // @的用户
   const [submitting, setSubmitting] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  // @用户弹窗状态
+  const [mentionModalVisible, setMentionModalVisible] = useState(false);
+  const [mentionSearchText, setMentionSearchText] = useState('');
+  const [mentionResults, setMentionResults] = useState<{ id: string; nickname: string; avatarUrl: string | null }[]>([]);
+  const [mentionSearching, setMentionSearching] = useState(false);
+
+  // 搜索用户
+  const searchUsers = useCallback(async (keyword: string) => {
+    if (keyword.length < 1) {
+      setMentionResults([]);
+      return;
+    }
+    setMentionSearching(true);
+    try {
+      const users = await dataGateway.me.searchUsers(keyword);
+      setMentionResults(users);
+    } catch (err) {
+      console.error('searchUsers failed:', err);
+    } finally {
+      setMentionSearching(false);
+    }
+  }, []);
+
+  // 防抖搜索
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (mentionSearchText.trim()) {
+        searchUsers(mentionSearchText.trim());
+      } else {
+        setMentionResults([]);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [mentionSearchText, searchUsers]);
+
+  // 选择用户添加到 @ 列表
+  const handleSelectMention = (selectedUser: { id: string; nickname: string }) => {
+    const mentionStr = `@${selectedUser.nickname}`;
+    if (!commentText.includes(mentionStr)) {
+      setCommentText(commentText + mentionStr);
+      setMentions([...mentions, selectedUser.nickname]);
+    }
+    setMentionModalVisible(false);
+    setMentionSearchText('');
+    setMentionResults([]);
+  };
 
   // 监听键盘高度
   useEffect(() => {
@@ -143,10 +193,30 @@ export default function PostDetailPage() {
     if (!commentText.trim() || !post) return;
     setSubmitting(true);
     try {
-      const newComment = await dataGateway.me.createComment(post.id, commentText.trim());
+      let imageUrl = commentImage || undefined;
+      // 如果有图片，需要先上传
+      if (commentImage) {
+        try {
+          const uploadResult = await dataGateway.me.uploadImages([commentImage]);
+          imageUrl = uploadResult.urls[0];
+        } catch (uploadErr) {
+          toast('图片上传失败');
+          setSubmitting(false);
+          return;
+        }
+      }
+      const newComment = await dataGateway.me.createComment(
+        post.id,
+        commentText.trim(),
+        undefined,
+        imageUrl,
+        mentions.length > 0 ? mentions : undefined
+      );
       setComments([newComment, ...comments]);
       setPost({ ...post, commentsCount: post.commentsCount + 1 });
       setCommentText('');
+      setCommentImage(null);
+      setMentions([]);
       setInputFocused(false);
       toast('评论成功');
     } catch (error) {
@@ -159,8 +229,34 @@ export default function PostDetailPage() {
   // 底部栏操作
   const handleFocus = () => setInputFocused(true);
   const handleBlur = () => setInputFocused(false);
-  const handleAddImage = () => toast('选择图片功能（待接入）');
-  const handleMention = () => toast('@用户功能（待接入）');
+
+  // 选择图片评论
+  const handleAddImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      toast('需要相册权限');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setCommentImage(result.assets[0].uri);
+      toast('已选择图片');
+    }
+  };
+
+  // @用户功能
+  const handleMention = () => {
+    setMentionModalVisible(true);
+    setMentionSearchText('');
+    setMentionResults([]);
+  };
+
+  // 清除已选图片
+  const handleRemoveImage = () => setCommentImage(null);
 
   // 删除帖子
   const handleDelete = async () => {
@@ -216,18 +312,18 @@ export default function PostDetailPage() {
         {post.content ? <Text style={styles.contentText}>{post.content}</Text> : null}
 
         {/* 图片 */}
-        {post.imageUrls && post.imageUrls.length > 0 && (
+        {(post.imageUrls?.length ?? 0) > 0 && (
           <View style={styles.imagesGrid}>
-            {post.imageUrls.map((url, index) => (
+            {post.imageUrls!.map((url, index) => (
               <Image key={index} source={{ uri: url }} style={styles.image} />
             ))}
           </View>
         )}
 
         {/* 标签 */}
-        {post.tags && post.tags.length > 0 && (
+        {(post.tags?.length ?? 0) > 0 && (
           <View style={styles.tagsRow}>
-            {post.tags.map((tag) => (
+            {post.tags!.map((tag) => (
               <View key={tag} style={styles.tag}>
                 <Text style={styles.tagText}>#{tag}</Text>
               </View>
@@ -264,6 +360,15 @@ export default function PostDetailPage() {
         {inputFocused || keyboardHeight > 0 ? (
           /* 展开状态 */
           <View style={styles.bottomExpanded}>
+            {/* 已选图片预览 */}
+            {commentImage && (
+              <View style={styles.selectedImageContainer}>
+                <Image source={{ uri: commentImage }} style={styles.selectedImage} />
+                <Pressable onPress={handleRemoveImage} style={styles.removeImageBtn}>
+                  <Text style={styles.removeImageText}>✕</Text>
+                </Pressable>
+              </View>
+            )}
             <TextInput
               style={styles.bottomInputExpanded}
               placeholder="说点什么..."
@@ -275,13 +380,17 @@ export default function PostDetailPage() {
             />
             <View style={styles.bottomExpandedActions}>
               <Pressable onPress={handleAddImage} style={styles.bottomExpAction}>
-                <Text style={styles.bottomExpIcon}>🖼️</Text>
+                <Text style={[styles.bottomExpIcon, commentImage && styles.bottomExpIconActive]}>
+                  {commentImage ? '✓' : '🖼️'}
+                </Text>
               </Pressable>
               <Pressable onPress={handleMention} style={styles.bottomExpAction}>
-                <Text style={styles.bottomExpIcon}>@</Text>
+                <Text style={[styles.bottomExpIcon, mentions.length > 0 && styles.bottomExpIconActive]}>
+                  @
+                </Text>
               </Pressable>
-              <Pressable onPress={handleSubmitComment} disabled={!commentText.trim() || submitting} style={[styles.bottomExpSend, (!commentText.trim() || submitting) && styles.bottomExpSendDisabled]}>
-                <Text style={[styles.bottomExpSendText, (!commentText.trim() || submitting) && styles.bottomExpSendTextDisabled]}>发送</Text>
+              <Pressable onPress={handleSubmitComment} disabled={(!commentText.trim() && !commentImage) || submitting} style={[styles.bottomExpSend, ((!commentText.trim() && !commentImage) || submitting) && styles.bottomExpSendDisabled]}>
+                <Text style={[styles.bottomExpSendText, ((!commentText.trim() && !commentImage) || submitting) && styles.bottomExpSendTextDisabled]}>发送</Text>
               </Pressable>
             </View>
           </View>
@@ -315,6 +424,45 @@ export default function PostDetailPage() {
           </View>
         )}
       </View>
+
+      {/* @用户弹窗 */}
+      <Modal visible={mentionModalVisible} transparent animationType="slide" onRequestClose={() => setMentionModalVisible(false)}>
+        <View style={styles.mentionModalMask}>
+          <View style={styles.mentionModalSheet}>
+            <View style={styles.mentionModalHeader}>
+              <Text style={styles.mentionModalTitle}>@提及用户</Text>
+              <Pressable onPress={() => setMentionModalVisible(false)}>
+                <Text style={styles.mentionModalClose}>✕</Text>
+              </Pressable>
+            </View>
+            <TextInput
+              style={styles.mentionSearchInput}
+              placeholder="搜索用户名..."
+              value={mentionSearchText}
+              onChangeText={setMentionSearchText}
+              autoFocus
+            />
+            <ScrollView style={styles.mentionResults}>
+              {mentionSearching ? (
+                <Text style={styles.mentionSearching}>搜索中...</Text>
+              ) : mentionResults.length === 0 && mentionSearchText.trim() ? (
+                <Text style={styles.mentionNoResults}>未找到用户</Text>
+              ) : (
+                mentionResults.map((user) => (
+                  <Pressable key={user.id} style={styles.mentionUserItem} onPress={() => handleSelectMention(user)}>
+                    {user.avatarUrl ? (
+                      <Image source={{ uri: user.avatarUrl }} style={styles.mentionUserAvatar} />
+                    ) : (
+                      <View style={styles.mentionUserAvatarPlaceholder} />
+                    )}
+                    <Text style={styles.mentionUserName}>{user.nickname}</Text>
+                  </Pressable>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -440,4 +588,109 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   bottomExpSendTextDisabled: {},
+
+  // 已选图片预览
+  selectedImageContainer: {
+    position: 'relative',
+    marginBottom: 8,
+  },
+  selectedImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    backgroundColor: '#D9D9D9',
+  },
+  removeImageBtn: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removeImageText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  bottomExpIconActive: {
+    color: '#2563EB',
+  },
+
+  // @用户弹窗
+  mentionModalMask: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  mentionModalSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+    maxHeight: '50%',
+  },
+  mentionModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  mentionModalTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  mentionModalClose: {
+    fontSize: 20,
+    color: '#6B7280',
+    padding: 4,
+  },
+  mentionSearchInput: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    marginBottom: 12,
+  },
+  mentionResults: {
+    maxHeight: 200,
+  },
+  mentionSearching: {
+    textAlign: 'center',
+    color: '#9CA3AF',
+    padding: 16,
+  },
+  mentionNoResults: {
+    textAlign: 'center',
+    color: '#9CA3AF',
+    padding: 16,
+  },
+  mentionUserItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E5E7EB',
+  },
+  mentionUserAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  mentionUserAvatarPlaceholder: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#D9D9D9',
+  },
+  mentionUserName: {
+    marginLeft: 12,
+    fontSize: 15,
+    color: '#111827',
+  },
 });

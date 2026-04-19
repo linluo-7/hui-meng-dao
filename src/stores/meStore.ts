@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { Image } from 'react-native';
 
 import type { UserProfile } from '@/src/models/types';
 import { dataGateway, type ContentItem } from '@/src/services/dataGateway';
@@ -25,7 +26,7 @@ type MeState = {
   loadDrafts: (type?: string) => Promise<void>;
 
   // 帖子操作
-  createPost: (data: { title: string; content?: string; localImages?: string[]; tags?: string[] }) => Promise<void>;
+  createPost: (data: { title: string; content?: string; localImages?: string[]; tags?: string[]; isPublic?: boolean }) => Promise<void>;
   likePost: (postId: string) => Promise<boolean>;
   favoritePost: (postId: string) => Promise<boolean>;
 };
@@ -110,7 +111,41 @@ export const useMeStore = create<MeState>((set, get) => ({
 
   createPost: async (data) => {
     console.log('createPost called with:', data);
-    await dataGateway.me.createPost(data);
+
+    // 先上传图片（如果有本地图片）
+    let imageUrls: string[] = [];
+    let coverAspectRatio = 0.75; // 默认3:4竖图
+    if (data.localImages && data.localImages.length > 0) {
+      console.log('Uploading images:', data.localImages);
+      imageUrls = await dataGateway.me.uploadImages(data.localImages);
+      console.log('Uploaded image URLs:', imageUrls);
+
+      // 计算第一张图片的宽高比（width/height）
+      try {
+        const { width, height } = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+          Image.getSize(
+            data.localImages![0],
+            (w, h) => resolve({ width: w, height: h }),
+            (err) => { console.warn('getSize failed:', err); reject(err); }
+          );
+        });
+        if (height > 0) coverAspectRatio = width / height;
+        console.log('Cover aspect ratio:', coverAspectRatio);
+      } catch {
+        console.warn('Could not get image dimensions, using default 0.75');
+      }
+    }
+
+    // 创建帖子（使用已上传的图片 URL）
+    await dataGateway.me.createPost({
+      title: data.title,
+      content: data.content,
+      imageUrls,
+      tags: data.tags,
+      coverAspectRatio,
+      isPublic: data.isPublic,
+    });
+
     // 刷新帖子列表
     await get().loadPosts();
     // 刷新用户资料（更新收藏和获赞数）

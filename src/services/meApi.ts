@@ -1,5 +1,5 @@
 import type { UserProfile } from '@/src/models/types';
-import { apiClient } from '@/src/services/apiClient';
+import { apiClient, BASE_URL } from '@/src/services/apiClient';
 
 // 帖子类型（完整数据）
 export interface PostItem {
@@ -10,6 +10,7 @@ export interface PostItem {
   imageUrls: string[];
   coverImageUrl: string | null;
   tags: string[];
+  isPublic: boolean;
   likesCount: number;
   commentsCount: number;
   favoritesCount: number;
@@ -48,7 +49,7 @@ export const meApi = {
   uploadAvatar: async (formData: FormData) => {
     // 手动构造请求，因为 apiClient 不支持直接传 FormData
     const token = await (await import('@/src/services/storage')).storage.getAuthToken();
-    const response = await fetch('http://10.146.158.17:4000/api/me/avatar', {
+    const response = await fetch(`${BASE_URL}/api/me/avatar`, {
       method: 'POST',
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -76,7 +77,7 @@ export const meApi = {
       formData.append('images', file);
     }
 
-    const response = await fetch('http://10.146.158.17:4000/api/me/upload-image', {
+    const response = await fetch(`${BASE_URL}/api/me/upload-image`, {
       method: 'POST',
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -101,9 +102,13 @@ export const meApi = {
   listDrafts: (type?: string) => apiClient.get<ContentItem[]>(`/api/me/drafts${type ? `?type=${type}` : ''}`),
 
   // 帖子操作
-  createPost: (data: { title: string; content?: string; imageUrls?: string[]; tags?: string[] }) => {
+  createPost: (data: { title: string; content?: string; imageUrls?: string[]; tags?: string[]; coverAspectRatio?: number; isPublic?: boolean }) => {
     console.log('meApi.createPost called:', data);
     return apiClient.post<PostItem>('/api/me/posts', data);
+  },
+  updatePost: (postId: string, data: { title?: string; content?: string; imageUrls?: string[]; tags?: string[]; coverAspectRatio?: number; isPublic?: boolean }) => {
+    console.log('meApi.updatePost called:', postId, data);
+    return apiClient.put<PostItem>(`/api/me/posts/${postId}`, data);
   },
   likePost: (postId: string) => apiClient.post<{ liked: boolean }>(`/api/me/posts/${postId}/like`),
   favoritePost: (postId: string) => apiClient.post<{ favorited: boolean }>(`/api/me/posts/${postId}/favorite`),
@@ -113,6 +118,10 @@ export const meApi = {
   // 评论
   getComments: (postId: string) =>
     apiClient.get<any[]>(`/api/me/posts/${postId}/comments`),
-  createComment: (postId: string, content: string, parentCommentId?: string) =>
-    apiClient.post<any>(`/api/me/posts/${postId}/comments`, { content, parentCommentId }),
+  createComment: (postId: string, content: string, parentCommentId?: string, imageUrl?: string, mentions?: string[]) =>
+    apiClient.post<any>(`/api/me/posts/${postId}/comments`, { content, parentCommentId, imageUrl, mentions }),
+
+  // 用户搜索（用于 @ 提及）
+  searchUsers: (keyword: string) =>
+    apiClient.get<{ id: string; nickname: string; avatarUrl: string | null }[]>(`/api/me/search-users?keyword=${encodeURIComponent(keyword)}`),
 };

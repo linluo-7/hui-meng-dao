@@ -435,7 +435,7 @@ meRouter.post('/upload-image', uploadPostImage.array('images', 9), async (req, r
 // 创建帖子
 meRouter.post('/posts', async (req, res) => {
   const userId = (req as any).userId as string;
-  const { title, content, imageUrls, tags } = req.body;
+  const { title, content, imageUrls, tags, isPublic } = req.body;
 
   if (!title || !title.trim()) {
     res.status(400).json({ message: '标题不能为空' });
@@ -444,15 +444,15 @@ meRouter.post('/posts', async (req, res) => {
 
   const postId = uuidv4();
   const coverImageUrl = Array.isArray(imageUrls) && imageUrls.length > 0 ? imageUrls[0] : null;
-  const ipAddress = req.ip || req.socket.remoteAddress || '';
 
   await pool.query(
-    `INSERT INTO posts (id, author_user_id, post_type, title, content, image_url, likes, comments_count, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO posts (id, author_user_id, post_type, is_public, title, content, image_url, likes, comments_count, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       postId,
       userId,
       'post',
+      isPublic !== undefined ? (isPublic ? 1 : 0) : 1,
       title.trim(),
       content?.trim() || null,
       JSON.stringify(imageUrls || []),
@@ -464,13 +464,12 @@ meRouter.post('/posts', async (req, res) => {
 
   // 返回创建的帖子
   const [rows] = await pool.query<any[]>(
-    `SELECT id, title, content, image_url, likes, comments_count, created_at
+    `SELECT id, title, content, image_url, is_public, likes, comments_count, created_at
      FROM posts WHERE id = ?`,
     [postId],
   );
   const row = rows[0];
   const imageUrlsParsed = parseImageUrls(row.image_url);
-  const tagsParsed = typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags;
   res.json({
     id: row.id,
     type: '帖子',
@@ -479,6 +478,7 @@ meRouter.post('/posts', async (req, res) => {
     imageUrls: imageUrlsParsed,
     coverImageUrl: null,
     tags: [],
+    isPublic: !!row.is_public,
     likesCount: row.likes ?? 0,
     commentsCount: row.comments_count ?? 0,
     favoritesCount: 0,
@@ -575,6 +575,7 @@ meRouter.get('/posts/:postId', async (req, res) => {
     tags: [],
     ipAddress: '',
     createdAt: new Date(row.created_at).toISOString(),
+    isPublic: !!row.is_public,
     likesCount: row.likes ?? 0,
     commentsCount: row.comments_count ?? 0,
     favoritesCount: 0,
@@ -587,7 +588,7 @@ meRouter.get('/posts/:postId', async (req, res) => {
 meRouter.put('/posts/:postId', async (req, res) => {
   const { postId } = req.params;
   const userId = (req as any).userId as string;
-  const { title, content, imageUrls, tags } = req.body;
+  const { title, content, imageUrls, tags, isPublic } = req.body;
 
   // 检查权限
   const [rows] = await pool.query<any[]>(`SELECT author_user_id FROM posts WHERE id = ?`, [postId]);
@@ -621,6 +622,10 @@ meRouter.put('/posts/:postId', async (req, res) => {
   if (tags !== undefined) {
     updateFields.push('tags = ?');
     updateValues.push(JSON.stringify(tags || []));
+  }
+  if (isPublic !== undefined) {
+    updateFields.push('is_public = ?');
+    updateValues.push(isPublic ? 1 : 0);
   }
 
   if (updateFields.length === 0) {
@@ -665,6 +670,7 @@ meRouter.put('/posts/:postId', async (req, res) => {
     imageUrls: imageUrlsParsed,
     coverImageUrl: imageUrlsParsed[0] ?? null,
     tags: tagsParsed ?? [],
+    isPublic: !!row.is_public,
     likesCount: row.likes ?? 0,
     commentsCount: row.comments_count ?? 0,
     isLiked: false,
