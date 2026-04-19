@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Pressable, ScrollView, StyleSheet, Text, TextInput, View,
-  Image, ActivityIndicator, Alert, RefreshControl,
+  Image, ActivityIndicator, Alert, RefreshControl, Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 
@@ -21,7 +21,7 @@ const ROLE_LABEL: Record<string, string> = {
   owner: '创建者', admin: '管理员', member: '成员',
 };
 
-type Tab = 'info' | 'gallery' | 'members';
+type Tab = 'info' | 'gallery' | 'members' | 'announcements' | 'attachments';
 
 export default function AlbumDetailPage() {
   const { albumId } = useLocalSearchParams<{ albumId: string }>();
@@ -76,8 +76,7 @@ export default function AlbumDetailPage() {
   };
 
   const onApply = () => {
-    // TODO: 申请表单页
-    Alert.alert('申请加入', '报名表单功能开发中');
+    router.push(`/albums/${albumId}/apply` as any);
   };
 
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" /></View>;
@@ -179,6 +178,10 @@ export default function AlbumDetailPage() {
             { key: 'info' as Tab, label: '详情' },
             { key: 'gallery' as Tab, label: '画廊' },
             { key: 'members' as Tab, label: '成员' },
+            ...(isMember ? [
+              { key: 'announcements' as Tab, label: '公告' },
+              { key: 'attachments' as Tab, label: '附件' },
+            ] : []),
           ].map(t => (
             <Pressable key={t.key} onPress={() => setTab(t.key)}
               style={[styles.tab, tab === t.key && styles.tabOn]}>
@@ -206,6 +209,14 @@ export default function AlbumDetailPage() {
 
         {tab === 'members' && (
           <MembersTab albumId={albumId!} isAdmin={isAdmin} onRefresh={() => load()} />
+        )}
+
+        {tab === 'announcements' && (
+          <AnnouncementsTab albumId={albumId!} isAdmin={isAdmin} />
+        )}
+
+        {tab === 'attachments' && (
+          <AttachmentsTab albumId={albumId!} isAdmin={isAdmin} />
         )}
       </ScrollView>
     </>
@@ -345,6 +356,114 @@ function MembersTab({ albumId, isAdmin, onRefresh }: { albumId: string; isAdmin:
   );
 }
 
+// =============================================================
+// 公告Tab
+// =============================================================
+function AnnouncementsTab({ albumId, isAdmin }: { albumId: string; isAdmin: boolean }) {
+  const router = useRouter();
+  const [anns, setAnns] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    albumsApi.getAnnouncements(albumId).then(res => {
+      setAnns(res.list ?? []);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, [albumId]);
+
+  const fmtDate = (d: string) => new Date(d).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+  return (
+    <View style={{ padding: 12, gap: 12 }}>
+      {isAdmin && (
+        <Pressable onPress={() => router.push(`/albums/${albumId}/announcements` as any)} style={styles.addBtn}>
+          <Text style={styles.addBtnText}>📢 发布公告</Text>
+        </Pressable>
+      )}
+      {loading ? <ActivityIndicator /> :
+        anns.length === 0 ? <Text style={styles.muted}>暂无公告</Text> :
+          anns.map(a => (
+            <View key={a.id} style={styles.annItem}>
+              <View style={styles.annHeader}>
+                {a.is_pinned ? <Text style={styles.pinnedBadge}>置顶</Text> : null}
+                <Text style={styles.annTitle}>{a.title}</Text>
+              </View>
+              <Text style={styles.annContent} numberOfLines={3}>{a.content}</Text>
+              <Text style={styles.annMeta}>{a.author_nickname} · {fmtDate(a.created_at)}</Text>
+            </View>
+          ))
+      }
+    </View>
+  );
+}
+
+// =============================================================
+// 附件Tab
+// =============================================================
+function AttachmentsTab({ albumId, isAdmin }: { albumId: string; isAdmin: boolean }) {
+  const [atts, setAtts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [showDeleting, setShowDeleting] = useState<string | null>(null);
+
+  useEffect(() => {
+    albumsApi.getAttachments(albumId).then(res => {
+      setAtts(res.list ?? []);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, [albumId]);
+
+  const fmtSize = (bytes: number) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes}B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+  };
+
+  const fmtDate = (d: string) => new Date(d).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit' });
+
+  const handleDownload = (url: string, name: string) => {
+    Linking.openURL(url).catch(() => toast('无法打开链接'));
+  };
+
+  const handleDelete = async (att: any) => {
+    setShowDeleting(att.id);
+    try {
+      await albumsApi.deleteAttachment(albumId, att.id);
+      toast('已删除');
+      const res = await albumsApi.getAttachments(albumId);
+      setAtts(res.list ?? []);
+    } catch (err: any) { toast(err?.message ?? '删除失败'); }
+    finally { setShowDeleting(null); }
+  };
+
+  return (
+    <View style={{ padding: 12, gap: 10 }}>
+      {loading ? <ActivityIndicator /> :
+        atts.length === 0 ? <Text style={styles.muted}>暂无附件</Text> :
+          atts.map(att => (
+            <View key={att.id} style={styles.attItem}>
+              <View style={styles.attInfo}>
+                <Text style={styles.attName} numberOfLines={1}>{att.file_name}</Text>
+                <Text style={styles.attMeta}>{fmtSize(att.file_size)} · {fmtDate(att.created_at)}</Text>
+              </View>
+              <View style={styles.attActions}>
+                <Pressable onPress={() => handleDownload(att.file_url, att.file_name)} style={styles.attBtn}>
+                  <Text style={styles.attBtnText}>下载</Text>
+                </Pressable>
+                {(isAdmin || true) && (
+                  <Pressable onPress={() => handleDelete(att)} disabled={showDeleting === att.id} style={styles.attBtn}>
+                    <Text style={[styles.attBtnText, { color: '#EF4444' }]}>
+                      {showDeleting === att.id ? '...' : '删除'}
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+          ))
+      }
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F7F8FA' },
   content: { paddingBottom: 40 },
@@ -401,4 +520,19 @@ const styles = StyleSheet.create({
   memberRole: { color: '#9CA3AF', fontSize: 12 },
   removeBtn: { color: '#EF4444', fontWeight: '800', fontSize: 13 },
   editBtn: { color: '#2563EB', fontWeight: '900', fontSize: 15 },
+  addBtn: { backgroundColor: '#111827', borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
+  addBtnText: { color: '#fff', fontWeight: '900', fontSize: 14 },
+  annItem: { backgroundColor: '#fff', borderRadius: 14, padding: 14, gap: 6, borderWidth: 1, borderColor: '#EEF1F4' },
+  annHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  pinnedBadge: { backgroundColor: '#EF4444', color: '#fff', fontSize: 10, fontWeight: '900', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  annTitle: { fontWeight: '900', color: '#111827', fontSize: 15, flex: 1 },
+  annContent: { color: '#374151', fontSize: 13, lineHeight: 20 },
+  annMeta: { color: '#9CA3AF', fontSize: 11 },
+  attItem: { backgroundColor: '#fff', borderRadius: 14, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: '#EEF1F4' },
+  attInfo: { flex: 1, gap: 2 },
+  attName: { fontWeight: '700', color: '#111827', fontSize: 13 },
+  attMeta: { color: '#9CA3AF', fontSize: 11 },
+  attActions: { flexDirection: 'row', gap: 8 },
+  attBtn: { paddingHorizontal: 10, paddingVertical: 4 },
+  attBtnText: { fontWeight: '800', fontSize: 12, color: '#2563EB' },
 });

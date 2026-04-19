@@ -26,7 +26,7 @@ type MeState = {
   loadDrafts: (type?: string) => Promise<void>;
 
   // 帖子操作
-  createPost: (data: { title: string; content?: string; localImages?: string[]; tags?: string[]; isPublic?: boolean }) => Promise<void>;
+  createPost: (data: { title: string; content?: string; localImages?: string[]; tags?: string[]; isPublic?: boolean; albumId?: string }) => Promise<void>;
   likePost: (postId: string) => Promise<boolean>;
   favoritePost: (postId: string) => Promise<boolean>;
 };
@@ -144,6 +144,7 @@ export const useMeStore = create<MeState>((set, get) => ({
       tags: data.tags,
       coverAspectRatio,
       isPublic: data.isPublic,
+      albumId: data.albumId,
     });
 
     // 刷新帖子列表

@@ -256,4 +256,44 @@ export const albumsApi = {
   deleteAttachment(albumId: string, attachmentId: string) {
     return apiClient.delete<{ ok: boolean }>(`/api/albums/${albumId}/attachments/${attachmentId}`);
   },
+
+  // ---------- 获取附件列表 ----------
+  getAttachments(albumId: string, params?: { moduleKey?: string; page?: number; pageSize?: number }) {
+    const search = new URLSearchParams();
+    if (params?.moduleKey) search.set('moduleKey', params.moduleKey);
+    if (params?.page) search.set('page', String(params.page));
+    if (params?.pageSize) search.set('pageSize', String(params.pageSize));
+    const qs = search.toString();
+    return apiClient.get<PaginatedResponse<any>>(`/api/albums/${albumId}/attachments/${qs ? '?' + qs : ''}`);
+  },
+
+  // ---------- 公告列表 ----------
+  getAnnouncements(albumId: string, page = 1, pageSize = 20) {
+    return apiClient.get<PaginatedResponse<any>>(
+      `/api/albums/${albumId}/announcements?page=${page}&pageSize=${pageSize}`,
+    );
+  },
+
+  // ---------- 发布公告 ----------
+  createAnnouncement(albumId: string, data: { title: string; content: string; isPinned?: boolean }) {
+    return apiClient.post<{ ok: boolean; data: { id: string } }>(
+      `/api/albums/${albumId}/announcements`,
+      { title: data.title, content: data.content, is_pinned: data.isPinned ?? false },
+    );
+  },
+
+  // ---------- 编辑公告 ----------
+  updateAnnouncement(albumId: string, annId: string, data: {
+    title?: string; content?: string; isPinned?: boolean;
+  }) {
+    return apiClient.put<{ ok: boolean }>(
+      `/api/albums/${albumId}/announcements/${annId}`,
+      { title: data.title, content: data.content, is_pinned: data.isPinned },
+    );
+  },
+
+  // ---------- 删除公告 ----------
+  deleteAnnouncement(albumId: string, annId: string) {
+    return apiClient.delete<{ ok: boolean }>(`/api/albums/${albumId}/announcements/${annId}`);
+  },
 };

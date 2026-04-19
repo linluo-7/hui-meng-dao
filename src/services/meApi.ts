@@ -102,11 +102,11 @@ export const meApi = {
   listDrafts: (type?: string) => apiClient.get<ContentItem[]>(`/api/me/drafts${type ? `?type=${type}` : ''}`),
 
   // 帖子操作
-  createPost: (data: { title: string; content?: string; imageUrls?: string[]; tags?: string[]; coverAspectRatio?: number; isPublic?: boolean }) => {
+  createPost: (data: { title: string; content?: string; imageUrls?: string[]; tags?: string[]; coverAspectRatio?: number; isPublic?: boolean; albumId?: string }) => {
     console.log('meApi.createPost called:', data);
     return apiClient.post<PostItem>('/api/me/posts', data);
   },
-  updatePost: (postId: string, data: { title?: string; content?: string; imageUrls?: string[]; tags?: string[]; coverAspectRatio?: number; isPublic?: boolean }) => {
+  updatePost: (postId: string, data: { title?: string; content?: string; imageUrls?: string[]; tags?: string[]; coverAspectRatio?: number; isPublic?: boolean; albumId?: string }) => {
     console.log('meApi.updatePost called:', postId, data);
     return apiClient.put<PostItem>(`/api/me/posts/${postId}`, data);
   },

@@ -454,19 +454,31 @@ meRouter.post('/upload-image', uploadPostImage.array('images', 9), async (req, r
 // 创建帖子
 meRouter.post('/posts', async (req, res) => {
   const userId = (req as any).userId as string;
-  const { title, content, imageUrls, tags, isPublic } = req.body;
+  const { title, content, imageUrls, tags, isPublic, albumId } = req.body;
 
   if (!title || !title.trim()) {
     res.status(400).json({ message: '标题不能为空' });
     return;
   }
 
+  // 如果指定了企划，检查用户是否为成员
+  let validAlbumId: string | null = null;
+  if (albumId) {
+    const [memberRows] = await pool.query<any[]>(
+      `SELECT id FROM album_members WHERE album_id = ? AND user_id = ? AND status = 'approved'`,
+      [albumId, userId],
+    );
+    if (memberRows.length > 0) {
+      validAlbumId = albumId;
+    }
+  }
+
   const postId = uuidv4();
   const coverImageUrl = Array.isArray(imageUrls) && imageUrls.length > 0 ? imageUrls[0] : null;
 
   await pool.query(
-    `INSERT INTO posts (id, author_user_id, post_type, is_public, title, content, image_url, likes, comments_count, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO posts (id, author_user_id, post_type, is_public, title, content, image_url, likes, comments_count, album_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       postId,
       userId,
@@ -477,13 +489,14 @@ meRouter.post('/posts', async (req, res) => {
       JSON.stringify(imageUrls || []),
       0,
       0,
+      validAlbumId,
       new Date(),
     ]
   );
 
   // 返回创建的帖子
   const [rows] = await pool.query<any[]>(
-    `SELECT id, title, content, image_url, is_public, likes, comments_count, created_at
+    `SELECT id, title, content, image_url, is_public, likes, comments_count, album_id, created_at
      FROM posts WHERE id = ?`,
     [postId],
   );
@@ -500,7 +513,7 @@ meRouter.post('/posts', async (req, res) => {
     isPublic: !!row.is_public,
     likesCount: row.likes ?? 0,
     commentsCount: row.comments_count ?? 0,
-    favoritesCount: 0,
+    albumId: row.album_id ?? null,
     createdAt: new Date(row.created_at).toISOString(),
   });
 });

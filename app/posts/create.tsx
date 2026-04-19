@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
-import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 
 import { toast } from '@/src/components/toast';
 import { useMeStore } from '@/src/stores/meStore';
+import { albumsApi } from '@/src/services/albumsApi';
 import { scale, verticalScale } from '@/src/utils/uiScale';
 
 export default function CreatePostPage() {
@@ -19,6 +20,16 @@ export default function CreatePostPage() {
   const [showTagInput, setShowTagInput] = useState(false);
   const [isPublic, setIsPublic] = useState(true);
   const [posting, setPosting] = useState(false);
+  const [myAlbums, setMyAlbums] = useState<any[]>([]);
+  const [albumLoading, setAlbumLoading] = useState(true);
+  const [selectedAlbumId, setSelectedAlbumId] = useState<string | undefined>(undefined);
+  const [showAlbumPicker, setShowAlbumPicker] = useState(false);
+
+  useEffect(() => {
+    albumsApi.getAlbums({ filter: 'joined', pageSize: 50 }).then(res => {
+      setMyAlbums(res.list ?? []);
+    }).catch(() => {}).finally(() => setAlbumLoading(false));
+  }, []);
 
   // 选择图片
   const handlePickImage = async () => {
@@ -129,6 +140,7 @@ export default function CreatePostPage() {
         localImages: images,
         tags,
         isPublic,
+        albumId: selectedAlbumId,
       });
       toast('发布成功');
       router.back();
@@ -221,6 +233,26 @@ export default function CreatePostPage() {
           </View>
         </View>
 
+        {/* 关联企划 */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>关联企划（可选）</Text>
+          <Pressable onPress={() => setShowAlbumPicker(true)} style={styles.albumPicker}>
+            {selectedAlbumId ? (
+              <Text style={styles.albumPickerText}>
+                {myAlbums.find(a => a.id === selectedAlbumId)?.title ?? '已选择企划'}
+              </Text>
+            ) : (
+              <Text style={styles.albumPickerHint}>点击选择已加入的企划</Text>
+            )}
+            <Text style={styles.albumPickerArrow}>›</Text>
+          </Pressable>
+          {selectedAlbumId && (
+            <Pressable onPress={() => setSelectedAlbumId(undefined)} style={styles.clearAlbum}>
+              <Text style={styles.clearAlbumText}>取消关联</Text>
+            </Pressable>
+          )}
+        </View>
+
         {/* 发布按钮 */}
         <Pressable
           onPress={handlePost}
@@ -251,6 +283,40 @@ export default function CreatePostPage() {
                 <Text style={styles.tagModalConfirmText}>确定</Text>
               </Pressable>
             </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* 企划选择弹窗 */}
+      <Modal visible={showAlbumPicker} transparent animationType="slide" onRequestClose={() => setShowAlbumPicker(false)}>
+        <Pressable style={styles.modalMask} onPress={() => setShowAlbumPicker(false)}>
+          <Pressable style={styles.albumModal} onPress={() => undefined}>
+            <View style={styles.albumModalHeader}>
+              <Text style={styles.albumModalTitle}>选择企划</Text>
+              <Pressable onPress={() => setShowAlbumPicker(false)}>
+                <Text style={styles.closeBtn}>×</Text>
+              </Pressable>
+            </View>
+            {albumLoading ? (
+              <View style={{ alignItems: 'center', paddingVertical: 30 }}><ActivityIndicator /></View>
+            ) : myAlbums.length === 0 ? (
+              <Text style={{ color: '#9CA3AF', textAlign: 'center', paddingVertical: 30 }}>暂未加入任何企划</Text>
+            ) : (
+              <ScrollView style={styles.albumList}>
+                {myAlbums.map(album => (
+                  <Pressable
+                    key={album.id}
+                    onPress={() => { setSelectedAlbumId(album.id); setShowAlbumPicker(false); }}
+                    style={[styles.albumItem, selectedAlbumId === album.id && styles.albumItemOn]}
+                  >
+                    <Text style={[styles.albumItemTitle, selectedAlbumId === album.id && styles.albumItemTitleOn]}>
+                      {album.title}
+                    </Text>
+                    {selectedAlbumId === album.id && <Text style={styles.albumCheck}>✓</Text>}
+                  </Pressable>
+                ))}
+              </ScrollView>
+            )}
           </Pressable>
         </Pressable>
       </Modal>
@@ -354,4 +420,24 @@ const styles = StyleSheet.create({
   tagModalCancelText: { color: '#6B7280', fontSize: scale(14) },
   tagModalConfirm: { backgroundColor: '#2563EB', borderRadius: scale(8), paddingHorizontal: scale(16), paddingVertical: verticalScale(8) },
   tagModalConfirmText: { color: '#FFFFFF', fontSize: scale(14), fontWeight: '600' },
+  albumPicker: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#F9FAFB', borderRadius: scale(12), borderWidth: 1, borderColor: '#E5E7EB',
+    paddingHorizontal: scale(14), paddingVertical: verticalScale(12),
+  },
+  albumPickerText: { fontSize: scale(15), color: '#111827', flex: 1 },
+  albumPickerHint: { fontSize: scale(15), color: '#9CA3AF' },
+  albumPickerArrow: { fontSize: scale(20), color: '#9CA3AF' },
+  clearAlbum: { marginTop: verticalScale(6) },
+  clearAlbumText: { color: '#EF4444', fontSize: scale(13), fontWeight: '600' },
+  albumModal: { backgroundColor: '#FFFFFF', borderTopLeftRadius: scale(20), borderTopRightRadius: scale(20), maxHeight: '70%' },
+  albumModalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: scale(16), borderBottomWidth: 1, borderBottomColor: '#EEF1F4' },
+  albumModalTitle: { fontWeight: '900', fontSize: scale(18), color: '#111827' },
+  closeBtn: { fontSize: scale(28), color: '#9CA3AF', lineHeight: scale(28) },
+  albumList: { padding: scale(12) },
+  albumItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: scale(14), borderRadius: scale(12), borderWidth: 1, borderColor: '#E5E7EB', marginBottom: scale(8) },
+  albumItemOn: { backgroundColor: '#111827', borderColor: '#111827' },
+  albumItemTitle: { fontWeight: '700', fontSize: scale(14), color: '#374151' },
+  albumItemTitleOn: { color: '#FFFFFF' },
+  albumCheck: { color: '#FFFFFF', fontWeight: '900', fontSize: scale(16) },
 });

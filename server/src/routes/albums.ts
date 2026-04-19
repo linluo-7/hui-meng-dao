@@ -760,3 +760,172 @@ albumsRouter.delete('/:id/attachments/:attachmentId', async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+
+// ============================================================
+// GET /api/albums/:id/attachments  获取企划附件列表(成员可见)
+// ============================================================
+albumsRouter.get('/:id/attachments', async (req, res) => {
+  const { id } = req.params;
+  const myUserId = (req as any).userId as string;
+
+  try {
+    const role = await getMemberRole(id, myUserId);
+    if (!role) { res.status(403).json({ message: '只有企划成员才能查看附件' }); return; }
+
+    const page = parseInt(String(req.query.page ?? '1'));
+    const pageSize = parseInt(String(req.query.pageSize ?? '20'));
+    const offset = (page - 1) * pageSize;
+    const moduleKey = req.query.moduleKey as string | undefined;
+
+    let where = 'aa.album_id = ?';
+    const params: any[] = [id];
+    if (moduleKey) { where += ' AND aa.module_key = ?'; params.push(moduleKey); }
+
+    const [rows] = await pool.query<any[]>(
+      `SELECT aa.*, u.nickname as uploader_nickname
+       FROM album_attachments aa
+       LEFT JOIN users u ON aa.uploader_id = u.id
+       WHERE ${where}
+       ORDER BY aa.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...params, pageSize, offset],
+    );
+
+    const [totalRows] = await pool.query<any[]>(
+      `SELECT COUNT(*) as total FROM album_attachments aa WHERE ${where}`, params,
+    );
+
+    res.json({ list: rows, total: totalRows[0].total, page, pageSize });
+  } catch (err) {
+    console.error('album attachments error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ============================================================
+// GET /api/albums/:id/announcements  获取企划公告列表(成员可见)
+// ============================================================
+albumsRouter.get('/:id/announcements', async (req, res) => {
+  const { id } = req.params;
+  const myUserId = (req as any).userId as string;
+
+  try {
+    const role = await getMemberRole(id, myUserId);
+    if (!role) { res.status(403).json({ message: '只有企划成员才能查看公告' }); return; }
+
+    const page = parseInt(String(req.query.page ?? '1'));
+    const pageSize = parseInt(String(req.query.pageSize ?? '20'));
+    const offset = (page - 1) * pageSize;
+
+    const [rows] = await pool.query<any[]>(
+      `SELECT ann.*, u.nickname as author_nickname
+       FROM album_announcements ann
+       LEFT JOIN users u ON ann.author_id = u.id
+       WHERE ann.album_id = ?
+       ORDER BY ann.is_pinned DESC, ann.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [id, pageSize, offset],
+    );
+
+    const [totalRows] = await pool.query<any[]>(
+      `SELECT COUNT(*) as total FROM album_announcements WHERE album_id = ?`, [id],
+    );
+
+    rows.forEach((r: any) => { if (r.is_pinned !== undefined) r.is_pinned = !!r.is_pinned; });
+
+    res.json({ list: rows, total: totalRows[0].total, page, pageSize });
+  } catch (err) {
+    console.error('album announcements error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ============================================================
+// POST /api/albums/:id/announcements  发布公告(仅admin)
+// ============================================================
+albumsRouter.post('/:id/announcements', async (req, res) => {
+  const { id } = req.params;
+  const myUserId = (req as any).userId as string;
+  const { title, content, is_pinned } = req.body as {
+    title?: string; content?: string; is_pinned?: boolean;
+  };
+
+  if (!title?.trim()) { res.status(400).json({ message: '公告标题不能为空' }); return; }
+  if (!content?.trim()) { res.status(400).json({ message: '公告内容不能为空' }); return; }
+
+  try {
+    const role = await getMemberRole(id, myUserId);
+    if (!isAdmin(role)) { res.status(403).json({ message: '只有管理员才能发布公告' }); return; }
+
+    const annId = uuidv4();
+    await pool.query(
+      `INSERT INTO album_announcements (id, album_id, author_id, title, content, is_pinned, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+      [annId, id, myUserId, title.trim(), content.trim(), is_pinned ? 1 : 0],
+    );
+
+    res.json({ ok: true, data: { id: annId } });
+  } catch (err) {
+    console.error('create announcement error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ============================================================
+// PUT /api/albums/:id/announcements/:annId  编辑公告(仅admin)
+// ============================================================
+albumsRouter.put('/:id/announcements/:annId', async (req, res) => {
+  const { id, annId } = req.params;
+  const myUserId = (req as any).userId as string;
+  const { title, content, is_pinned } = req.body as {
+    title?: string; content?: string; is_pinned?: boolean;
+  };
+
+  try {
+    const role = await getMemberRole(id, myUserId);
+    if (!isAdmin(role)) { res.status(403).json({ message: '只有管理员才能编辑公告' }); return; }
+
+    const [rows] = await pool.query<any[]>(
+      `SELECT id FROM album_announcements WHERE id = ? AND album_id = ?`, [annId, id],
+    );
+    if (!rows.length) { res.status(404).json({ message: '公告不存在' }); return; }
+
+    const updates: string[] = [];
+    const params: any[] = [];
+    if (title !== undefined) { updates.push('title = ?'); params.push(title.trim()); }
+    if (content !== undefined) { updates.push('content = ?'); params.push(content.trim()); }
+    if (is_pinned !== undefined) { updates.push('is_pinned = ?'); params.push(is_pinned ? 1 : 0); }
+
+    if (updates.length === 0) { res.json({ ok: true }); return; }
+
+    await pool.query(`UPDATE album_announcements SET ${updates.join(', ')} WHERE id = ?`, [...params, annId]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('update announcement error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ============================================================
+// DELETE /api/albums/:id/announcements/:annId  删除公告(仅admin)
+// ============================================================
+albumsRouter.delete('/:id/announcements/:annId', async (req, res) => {
+  const { id, annId } = req.params;
+  const myUserId = (req as any).userId as string;
+
+  try {
+    const role = await getMemberRole(id, myUserId);
+    if (!isAdmin(role)) { res.status(403).json({ message: '只有管理员才能删除公告' }); return; }
+
+    const [rows] = await pool.query<any[]>(
+      `SELECT id FROM album_announcements WHERE id = ? AND album_id = ?`, [annId, id],
+    );
+    if (!rows.length) { res.status(404).json({ message: '公告不存在' }); return; }
+
+    await pool.query(`DELETE FROM album_announcements WHERE id = ?`, [annId]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('delete announcement error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});

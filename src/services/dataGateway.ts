@@ -55,7 +55,7 @@ export const dataGateway = {
     listFavorites: (targetType?: string) => meApi.listFavorites(targetType) as unknown as Promise<ContentItem[]>,
     listLiked: () => meApi.listLiked() as unknown as Promise<ContentItem[]>,
     listDrafts: (type?: string) => meApi.listDrafts(type) as unknown as Promise<ContentItem[]>,
-    createPost: (data: { title: string; content?: string; imageUrls?: string[]; tags?: string[] }) =>
+    createPost: (data: { title: string; content?: string; imageUrls?: string[]; tags?: string[]; albumId?: string }) =>
       meApi.createPost(data) as unknown as Promise<PostItem>,
     likePost: (postId: string) => meApi.likePost(postId),
     favoritePost: (postId: string) => meApi.favoritePost(postId),
