@@ -2,6 +2,15 @@ import { Router } from 'express';
 
 import { pool } from '../db/mysql.js';
 
+// 统一解析 image_url，兼容旧数据 {"urls":[...]} 和新数据 ["..."]
+function parseImageUrls(raw: any): string[] {
+  if (!raw) return [];
+  let parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  if (Array.isArray(parsed)) return parsed;
+  if (parsed && Array.isArray(parsed.urls)) return parsed.urls;
+  return [];
+}
+
 export const meRouter = Router();
 
 meRouter.get('/profile', async (req, res) => {
@@ -232,14 +241,14 @@ meRouter.get('/posts', async (req, res) => {
     [userId, userId],
   );
   res.json(rows.map((row) => {
-    const imageUrls = typeof row.image_url === 'string' ? JSON.parse(row.image_url) : row.image_url;
+    const imageUrls = parseImageUrls(row.image_url);
     return {
       id: row.id,
       type: '帖子',
       title: row.title,
       content: row.content ?? '',
-      imageUrls: imageUrls ?? [],
-      coverImageUrl: imageUrls?.[0] ?? null,
+      imageUrls,
+      coverImageUrl: imageUrls[0] ?? null,
       tags: [],
       likesCount: row.likes ?? 0,
       commentsCount: row.comments_count ?? 0,
@@ -389,7 +398,10 @@ meRouter.post('/avatar', uploadAvatar.single('avatar'), async (req, res) => {
     res.status(400).json({ message: '请上传图片' });
     return;
   }
-  const avatarUrl = `http://10.146.158.17:4000/uploads/avatars/${req.file.filename}`;
+  // 动态获取请求的 host，避免硬编码 IP
+  const protocol = req.protocol;
+  const host = req.get('host');
+  const avatarUrl = `${protocol}://${host}/uploads/avatars/${req.file.filename}`;
   await pool.query('UPDATE users SET avatar_url = ?, updated_at = ? WHERE id = ?', [
     avatarUrl,
     new Date(),
@@ -411,7 +423,10 @@ meRouter.post('/upload-image', uploadPostImage.array('images', 9), async (req, r
     res.status(400).json({ message: '请上传图片' });
     return;
   }
-  const urls = files.map((file) => `http://10.146.158.17:4000/uploads/posts/${file.filename}`);
+  // 动态获取请求的 host，避免硬编码 IP
+  const protocol = req.protocol; // 'http' 或 'https'
+  const host = req.get('host'); // 例如 'localhost:4000' 或 '146.56.251.112:4000'
+  const urls = files.map((file) => `${protocol}://${host}/uploads/posts/${file.filename}`);
   res.json({ urls });
 });
 
@@ -454,14 +469,14 @@ meRouter.post('/posts', async (req, res) => {
     [postId],
   );
   const row = rows[0];
-  const imageUrlsParsed = typeof row.image_url === 'string' ? JSON.parse(row.image_url) : row.image_url;
+  const imageUrls = parseImageUrls(row.image_url);
   const tagsParsed = typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags;
   res.json({
     id: row.id,
     type: '帖子',
     title: row.title,
     content: row.content ?? '',
-    imageUrls: imageUrlsParsed ?? [],
+    imageUrls,
     coverImageUrl: null,
     tags: [],
     likesCount: row.likes ?? 0,
@@ -546,7 +561,7 @@ meRouter.get('/posts/:postId', async (req, res) => {
   }
 
   const row = rows[0];
-  const imageUrlsParsed = typeof row.image_url === 'string' ? JSON.parse(row.image_url) : row.image_url;
+  const imageUrls = parseImageUrls(row.image_url);
 
   res.json({
     id: row.id,
@@ -555,8 +570,8 @@ meRouter.get('/posts/:postId', async (req, res) => {
     authorAvatarUrl: row.author_avatar_url ?? null,
     title: row.title,
     content: row.content ?? '',
-    imageUrls: imageUrlsParsed ?? [],
-    coverImageUrl: imageUrlsParsed?.[0] ?? null,
+    imageUrls,
+    coverImageUrl: imageUrls[0] ?? null,
     tags: [],
     ipAddress: '',
     createdAt: new Date(row.created_at).toISOString(),
@@ -565,6 +580,96 @@ meRouter.get('/posts/:postId', async (req, res) => {
     favoritesCount: 0,
     isLiked: row.is_liked > 0,
     isFavorited: row.is_favorited > 0,
+  });
+});
+
+// 更新帖子
+meRouter.put('/posts/:postId', async (req, res) => {
+  const { postId } = req.params;
+  const userId = (req as any).userId as string;
+  const { title, content, imageUrls, tags } = req.body;
+
+  // 检查权限
+  const [rows] = await pool.query<any[]>(`SELECT author_user_id FROM posts WHERE id = ?`, [postId]);
+  if (!rows.length || rows[0].author_user_id !== userId) {
+    res.status(403).json({ message: '无权限' });
+    return;
+  }
+
+  if (title !== undefined) {
+    if (!title.trim()) {
+      res.status(400).json({ message: '标题不能为空' });
+      return;
+    }
+  }
+
+  const updateFields: string[] = [];
+  const updateValues: any[] = [];
+
+  if (title !== undefined) {
+    updateFields.push('title = ?');
+    updateValues.push(title.trim());
+  }
+  if (content !== undefined) {
+    updateFields.push('content = ?');
+    updateValues.push(content?.trim() || null);
+  }
+  if (imageUrls !== undefined) {
+    updateFields.push('image_url = ?');
+    updateValues.push(JSON.stringify(imageUrls || []));
+  }
+  if (tags !== undefined) {
+    updateFields.push('tags = ?');
+    updateValues.push(JSON.stringify(tags || []));
+  }
+
+  if (updateFields.length === 0) {
+    res.status(400).json({ message: '没有需要更新的字段' });
+    return;
+  }
+
+  updateFields.push('updated_at = ?');
+  updateValues.push(new Date());
+  updateValues.push(postId);
+
+  await pool.query(
+    `UPDATE posts SET ${updateFields.join(', ')} WHERE id = ?`,
+    updateValues,
+  );
+
+  // 返回更新后的帖子
+  const [updatedRows] = await pool.query<any[]>(
+    `SELECT p.*, u.nickname as author_nickname, u.avatar_url as author_avatar_url
+     FROM posts p
+     LEFT JOIN users u ON p.author_user_id = u.id
+     WHERE p.id = ?`,
+    [postId],
+  );
+
+  if (!updatedRows[0]) {
+    res.status(404).json({ message: '帖子不存在' });
+    return;
+  }
+
+  const row = updatedRows[0];
+  const imageUrls = parseImageUrls(row.image_url);
+  const tagsParsed = typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags;
+
+  res.json({
+    id: row.id,
+    authorUserId: row.author_user_id,
+    authorNickname: row.author_nickname ?? '匿名用户',
+    authorAvatarUrl: row.avatar_url ?? null,
+    title: row.title,
+    content: row.content ?? '',
+    imageUrls,
+    coverImageUrl: imageUrls[0] ?? null,
+    tags: tagsParsed ?? [],
+    likesCount: row.likes ?? 0,
+    commentsCount: row.comments_count ?? 0,
+    isLiked: false,
+    isFavorited: false,
+    createdAt: new Date(row.created_at).toISOString(),
   });
 });
 
@@ -614,7 +719,7 @@ meRouter.get('/posts/:postId/comments', async (req, res) => {
 meRouter.post('/posts/:postId/comments', async (req, res) => {
   const userId = (req as any).userId as string;
   const { postId } = req.params;
-  const { content, parentCommentId } = req.body;
+  const { content, parentCommentId, imageUrl, mentions } = req.body;
 
   if (!content || !content.trim()) {
     res.status(400).json({ message: '评论内容不能为空' });
@@ -631,8 +736,8 @@ meRouter.post('/posts/:postId/comments', async (req, res) => {
   const user = userRows[0];
 
   await pool.query(
-    `INSERT INTO comments (id, post_id, parent_comment_id, author_user_id, author_nickname, content, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO comments (id, post_id, parent_comment_id, author_user_id, author_nickname, content, image_url, mentions, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       commentId,
       postId,
@@ -640,6 +745,8 @@ meRouter.post('/posts/:postId/comments', async (req, res) => {
       userId,
       user?.nickname || '匿名用户',
       content.trim(),
+      imageUrl || null,
+      mentions ? JSON.stringify(mentions) : null,
       new Date(),
     ],
   );
@@ -655,7 +762,35 @@ meRouter.post('/posts/:postId/comments', async (req, res) => {
     authorNickname: user?.nickname || '匿名用户',
     authorAvatarUrl: user?.avatar_url,
     content: content.trim(),
+    imageUrl: imageUrl || null,
+    mentions: mentions || null,
     likesCount: 0,
     createdAt: new Date().toISOString(),
+    repliesCount: 0,
   });
+});
+
+// 搜索用户（用于 @ 提及）
+meRouter.get('/search-users', async (req, res) => {
+  const keyword = String(req.query.keyword ?? '').trim();
+  const currentUserId = (req as any).userId as string;
+
+  if (!keyword || keyword.length < 1) {
+    res.json([]);
+    return;
+  }
+
+  const [rows] = await pool.query<any[]>(
+    `SELECT id, nickname, avatar_url FROM users
+     WHERE status = 1 AND id != ? AND nickname LIKE ?
+     ORDER BY followers_count DESC
+     LIMIT 10`,
+    [currentUserId, `%${keyword}%`],
+  );
+
+  res.json(rows.map((row) => ({
+    id: row.id,
+    nickname: row.nickname,
+    avatarUrl: row.avatar_url ?? null,
+  })));
 });
