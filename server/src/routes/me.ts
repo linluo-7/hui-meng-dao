@@ -469,14 +469,14 @@ meRouter.post('/posts', async (req, res) => {
     [postId],
   );
   const row = rows[0];
-  const imageUrls = parseImageUrls(row.image_url);
+  const imageUrlsParsed = parseImageUrls(row.image_url);
   const tagsParsed = typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags;
   res.json({
     id: row.id,
     type: '帖子',
     title: row.title,
     content: row.content ?? '',
-    imageUrls,
+    imageUrls: imageUrlsParsed,
     coverImageUrl: null,
     tags: [],
     likesCount: row.likes ?? 0,
@@ -652,7 +652,7 @@ meRouter.put('/posts/:postId', async (req, res) => {
   }
 
   const row = updatedRows[0];
-  const imageUrls = parseImageUrls(row.image_url);
+  const imageUrlsParsed = parseImageUrls(row.image_url);
   const tagsParsed = typeof row.tags === 'string' ? JSON.parse(row.tags) : row.tags;
 
   res.json({
@@ -662,8 +662,8 @@ meRouter.put('/posts/:postId', async (req, res) => {
     authorAvatarUrl: row.avatar_url ?? null,
     title: row.title,
     content: row.content ?? '',
-    imageUrls,
-    coverImageUrl: imageUrls[0] ?? null,
+    imageUrls: imageUrlsParsed,
+    coverImageUrl: imageUrlsParsed[0] ?? null,
     tags: tagsParsed ?? [],
     likesCount: row.likes ?? 0,
     commentsCount: row.comments_count ?? 0,
