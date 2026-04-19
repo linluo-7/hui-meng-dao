@@ -296,4 +296,29 @@ export const albumsApi = {
   deleteAnnouncement(albumId: string, annId: string) {
     return apiClient.delete<{ ok: boolean }>(`/api/albums/${albumId}/announcements/${annId}`);
   },
+
+  // ---------- 获取我的所有申请记录 ----------
+  getMyApplications() {
+    return apiClient.get<{ list: AlbumApplicationItem[] }>(`/api/albums/applications/me`);
+  },
+
+  // ---------- 获取当前用户在特定企划的申请状态 ----------
+  getMyApplicationStatus(albumId: string) {
+    return apiClient.get<{
+      code: number;
+      data: {
+        is_member: boolean;
+        role?: string | null;
+        application?: {
+          id: string;
+          status: 'pending' | 'approved' | 'rejected';
+          feedback?: string;
+          score?: number;
+          reviewer_nickname?: string;
+          created_at: string;
+          reviewed_at?: string;
+        } | null;
+      };
+    }>(`/api/albums/${albumId}/application/me`);
+  },
 };

@@ -23,11 +23,20 @@ const ROLE_LABEL: Record<string, string> = {
 
 type Tab = 'info' | 'gallery' | 'members' | 'announcements' | 'attachments';
 
+interface MyApplicationStatus {
+  status: 'pending' | 'approved' | 'rejected';
+  feedback?: string;
+  score?: number;
+  reviewer_nickname?: string;
+  created_at: string;
+}
+
 export default function AlbumDetailPage() {
   const { albumId } = useLocalSearchParams<{ albumId: string }>();
   const router = useRouter();
 
   const [album, setAlbum] = useState<AlbumDetail | null>(null);
+  const [myApp, setMyApp] = useState<MyApplicationStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<Tab>('info');
@@ -37,8 +46,12 @@ export default function AlbumDetailPage() {
     if (refresh) setRefreshing(true);
     else setLoading(true);
     try {
-      const res = await albumsApi.getAlbumDetail(albumId!);
-      setAlbum(res.data);
+      const [detailRes, appRes] = await Promise.all([
+        albumsApi.getAlbumDetail(albumId!),
+        albumsApi.getMyApplicationStatus(albumId!).catch(() => null),
+      ]);
+      setAlbum(detailRes.data);
+      setMyApp(appRes?.data?.application ?? null);
     } catch (err: any) {
       toast(err?.message ?? '加载失败');
     } finally {
@@ -83,7 +96,7 @@ export default function AlbumDetailPage() {
   if (!album) return <View style={styles.center}><Text style={styles.emptyText}>企划不存在</Text></View>;
 
   const isAdmin = album.my_role === 'owner' || album.my_role === 'co_creator' || album.my_role === 'admin';
-  const isMember = !!album.my_role;
+  const isMember = !!album.my_role || myApp?.status === 'approved';
 
   return (
     <>
@@ -156,19 +169,46 @@ export default function AlbumDetailPage() {
             <Text style={styles.ownerRole}>创建者</Text>
           </Pressable>
 
-          {/* 加入按钮 */}
+          {/* 加入按钮 / 申请状态 */}
           {!isMember && (
-            <Pressable
-              style={[styles.joinBtn, joinLoading && styles.joinBtnDisabled]}
-              onPress={album.require_review ? onApply : onJoin}
-              disabled={joinLoading}
-            >
-              {joinLoading ? <ActivityIndicator color="#fff" /> : (
-                <Text style={styles.joinBtnText}>
-                  {album.require_review ? '申请加入' : '加入企划'}
-                </Text>
+            <>
+              {myApp?.status === 'pending' && (
+                <View style={styles.appStatusCard}>
+                  <Text style={styles.appStatusLabel}>⏳ 申请待审核</Text>
+                  <Text style={styles.appStatusHint}>你的申请正在等待管理员审核，请耐心等待</Text>
+                </View>
               )}
-            </Pressable>
+              {myApp?.status === 'rejected' && (
+                <View style={styles.appStatusCard}>
+                  <Text style={[styles.appStatusLabel, { color: '#EF4444' }]}>❌ 申请被拒绝</Text>
+                  {myApp.feedback && <Text style={styles.appStatusHint}>理由：{myApp.feedback}</Text>}
+                  <Pressable
+                    style={[styles.joinBtn, joinLoading && styles.joinBtnDisabled]}
+                    onPress={album.require_review ? onApply : onJoin}
+                    disabled={joinLoading}
+                  >
+                    {joinLoading ? <ActivityIndicator color="#fff" /> : (
+                      <Text style={styles.joinBtnText}>
+                        {album.require_review ? '再次申请' : '重新申请'}
+                      </Text>
+                    )}
+                  </Pressable>
+                </View>
+              )}
+              {!myApp && (
+                <Pressable
+                  style={[styles.joinBtn, joinLoading && styles.joinBtnDisabled]}
+                  onPress={album.require_review ? onApply : onJoin}
+                  disabled={joinLoading}
+                >
+                  {joinLoading ? <ActivityIndicator color="#fff" /> : (
+                    <Text style={styles.joinBtnText}>
+                      {album.require_review ? '申请加入' : '加入企划'}
+                    </Text>
+                  )}
+                </Pressable>
+              )}
+            </>
           )}
         </View>
 
@@ -478,6 +518,9 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   metaText: { color: '#6B7280', fontSize: 13 },
   roleBadge: { backgroundColor: '#111827', color: '#fff', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, fontSize: 11, fontWeight: '900' },
+  appStatusCard: { marginTop: 12, backgroundColor: '#fff', borderRadius: 14, padding: 14, gap: 8, borderWidth: 1, borderColor: '#EEF1F4' },
+  appStatusLabel: { fontWeight: '900', fontSize: 15, color: '#F59E0B' },
+  appStatusHint: { color: '#6B7280', fontSize: 13, lineHeight: 20 },
   summary: { color: '#374151', fontSize: 15, lineHeight: 22 },
   summaryImg: { width: 200, height: 150, borderRadius: 10, marginRight: 8, backgroundColor: '#EEF1F4' },
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
