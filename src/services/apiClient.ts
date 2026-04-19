@@ -144,4 +144,5 @@ export const apiClient = {
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
   delete: <T>(path: string) => request<T>('DELETE', path),
   upload: <T>(path: string, body: FormData) => request<T>('POST', path, body),
+  uploadPut: <T>(path: string, body: FormData) => request<T>('PUT', path, body),
 };

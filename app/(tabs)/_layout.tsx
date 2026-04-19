@@ -89,7 +89,7 @@ export default function TabLayout() {
         options={{ title: '首页' }}
       />
       <Tabs.Screen
-        name="projects/index"
+        name="albums/index"
         options={{ title: '企划' }}
       />
       <Tabs.Screen

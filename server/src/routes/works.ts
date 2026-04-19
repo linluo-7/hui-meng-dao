@@ -24,12 +24,14 @@ worksRouter.get('/', async (req, res) => {
   const pageSize = parseInt(String(req.query.pageSize ?? '20'));
   const offset = (page - 1) * pageSize;
   const projectId = req.query.projectId as string | undefined;
+  const albumId = req.query.albumId as string | undefined;
   const authorUserId = req.query.authorUserId as string | undefined;
   const myUserId = (req as any).userId as string | undefined;
 
   let where = '';
   const params: any[] = [];
   if (projectId) { where += ' AND w.project_id = ?'; params.push(projectId); }
+  if (albumId) { where += ' AND w.album_id = ?'; params.push(albumId); }
   if (authorUserId) { where += ' AND w.author_user_id = ?'; params.push(authorUserId); }
 
   try {

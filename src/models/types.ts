@@ -285,3 +285,133 @@ export interface RuleSet {
   allowPvp?: boolean;
   autoJudge?: boolean;
 }
+
+// =============================================================
+// 企划(Album)系统 - MVP 类型定义
+// =============================================================
+
+/** 企划隐私级别 */
+export type AlbumPrivacy = 'private' | 'friends' | 'public';
+
+/** 企划状态 */
+export type AlbumStatus = 'draft' | 'recruiting' | 'active' | 'finished';
+
+/** 成员角色(前端统一展示co_creator为admin) */
+export type AlbumMemberRole = 'owner' | 'admin' | 'member';
+
+/** 企划成员 */
+export interface AlbumMember {
+  id: string;
+  albumId: string;
+  userId: string;
+  nickname: string;
+  avatarUrl?: string;
+  role: AlbumMemberRole;
+  status: 'pending' | 'approved' | 'rejected';
+  joinedAt: string;
+}
+
+/** 报名表字段 */
+export interface ApplicationField {
+  id: string;
+  key: string;
+  label: string;
+  type: 'text' | 'textarea' | 'select' | 'image';
+  required: boolean;
+  options?: string[];     // select 类型选项
+  maxLength?: number;     // 文字长度限制
+  helperText?: string;    // 帮助说明
+}
+
+/** 企划模块(复用企划模块设计Demo的模块系统) */
+export interface AlbumModule {
+  key: string;
+  title: string;
+  moduleType: 'rich_text' | 'gallery' | 'video' | 'qa';
+  content: string;
+  imageUrls: string[];
+  videoUrl?: string;
+  orderIndex: number;
+  enabled: boolean;
+  // 可扩展字段(关联附件等)
+  attachmentIds?: string[];
+}
+
+/** 企划附件 */
+export interface AlbumAttachment {
+  id: string;
+  albumId: string;
+  uploaderId: string;
+  fileUrl: string;
+  fileName: string;
+  fileSize: number;
+  fileType: string;
+  moduleKey?: string;
+  createdAt: string;
+}
+
+/** 企划申请记录 */
+export interface AlbumApplication {
+  id: string;
+  albumId: string;
+  userId: string;
+  nickname: string;
+  avatarUrl?: string;
+  formPayload: Record<string, any>;
+  status: 'pending' | 'approved' | 'rejected';
+  reviewerId?: string;
+  feedback?: string;
+  score?: number;
+  createdAt: string;
+  reviewedAt?: string;
+}
+
+/** 企划主对象 */
+export interface Album {
+  id: string;
+  title: string;
+  summary: string;
+  coverUrl?: string;
+  summaryImages: string[];
+
+  privacy: AlbumPrivacy;
+  requireReview: boolean;
+
+  ownerUserId: string;
+  ownerNickname: string;
+  ownerAvatar?: string;
+  coCreatorIds: string[];   // 联合创建者(co_creator=admin权限)
+  adminUserIds: string[];    // 额外管理员
+
+  tags: string[];
+  status: AlbumStatus;
+  memberLimit?: number;
+  membersCount: number;
+  worksCount: number;
+
+  applicationForm: ApplicationField[];
+  modules: AlbumModule[];
+
+  createdAt: string;
+  updatedAt: string;
+
+  // 当前用户在企划中的角色(详情接口返回)
+  myRole?: AlbumMemberRole | null;
+}
+
+/** 创建企划的请求参数 */
+export interface CreateAlbumPayload {
+  title: string;
+  summary?: string;
+  privacy?: AlbumPrivacy;
+  requireReview?: boolean;
+  tags?: string[];
+  status?: AlbumStatus;
+  memberLimit?: number;
+  coCreatorIds?: string[];
+  applicationForm?: ApplicationField[];
+  modules?: AlbumModule[];
+}
+
+/** 作品来源类型(直接上传/关联帖子) */
+export type WorkUploadType = 'direct' | 'post_related';
