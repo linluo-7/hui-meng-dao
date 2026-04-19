@@ -17,6 +17,114 @@ mkdirSync('uploads/albums', { recursive: true });
 albumsRouter.use(authMiddleware);
 
 // =========================================================
+// GET /api/albums/applications/me  获取当前用户的所有申请
+// =========================================================
+albumsRouter.get('/applications/me', async (req, res) => {
+  try {
+    const myUserId = (req as any).userId as string;
+    const { status } = req.query;
+
+    let sql = `
+      SELECT 
+        aa.*,
+        al.title as album_title,
+        al.cover_url as album_cover_url,
+        u.nickname as reviewer_nickname
+      FROM album_applications aa
+      JOIN albums al ON aa.album_id = al.id
+      LEFT JOIN users u ON aa.reviewer_id = u.id
+      WHERE aa.user_id = ?
+    `;
+    const params: any[] = [myUserId];
+
+    if (status) {
+      sql += ' AND aa.status = ?';
+      params.push(status);
+    }
+
+    sql += ' ORDER BY aa.created_at DESC';
+
+    const [rows] = await pool.query<any[]>(sql, params);
+    
+    // 解析 form_payload
+    rows.forEach((r: any) => {
+      if (r.form_payload) {
+        try { r.form_payload = JSON.parse(r.form_payload); } catch { r.form_payload = {}; }
+      }
+    });
+
+    res.json({ list: rows });
+  } catch (err) {
+    console.error('get my applications error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// =========================================================
+// GET /api/albums/:id/application/me  获取当前用户在特定企划的申请状态
+// =========================================================
+albumsRouter.get('/:id/application/me', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const myUserId = (req as any).userId as string;
+
+    // 检查是否是成员
+    const myRole = await getMemberRole(id, myUserId);
+    if (myRole) {
+      return res.json({ 
+        code: 0, 
+        data: { 
+          is_member: true,
+          role: myRole,
+          application: null 
+        } 
+      });
+    }
+
+    // 获取申请信息
+    const [applications] = await pool.query<any[]>(
+      `SELECT aa.*, al.title as album_title, u.nickname as reviewer_nickname
+       FROM album_applications aa
+       JOIN albums al ON aa.album_id = al.id
+       LEFT JOIN users u ON aa.reviewer_id = u.id
+       WHERE aa.album_id = ? AND aa.user_id = ?
+       ORDER BY aa.created_at DESC
+       LIMIT 1`,
+      [id, myUserId]
+    );
+
+    if (!applications.length) {
+      return res.json({ 
+        code: 0, 
+        data: { 
+          is_member: false,
+          role: null,
+          application: null 
+        } 
+      });
+    }
+
+    const app = applications[0];
+    if (app.form_payload) {
+      try { app.form_payload = JSON.parse(app.form_payload); } catch { app.form_payload = {}; }
+    }
+
+    res.json({ 
+      code: 0, 
+      data: { 
+        is_member: false,
+        role: null,
+        application: app 
+      } 
+    });
+  } catch (err) {
+    console.error('get application status error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// =========================================================
+
 // 工具函数：获取用户在企划中的角色
 // =========================================================
 async function getMemberRole(albumId: string, userId: string): Promise<string | null> {
