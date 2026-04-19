@@ -230,9 +230,11 @@ export default function RoleDetailPage() {
             )}
             <View style={{ flex: 1 }}>
               <Text style={styles.name}>{role.name}</Text>
-              <Text style={styles.meta}>
-                {role.ownerNickname} · {role.followersCount} 关注
-              </Text>
+              <Pressable onPress={() => router.push(`/user/${role.ownerUserId}` as any)}>
+                <Text style={styles.meta}>
+                  {role.ownerNickname} · {role.followersCount} 关注
+                </Text>
+              </Pressable>
             </View>
             <Pressable onPress={handleFavorite} style={[styles.followBtn, role.isFavorited && styles.followBtnActive]}>
               <Text style={[styles.followText, role.isFavorited && styles.followTextActive]}>

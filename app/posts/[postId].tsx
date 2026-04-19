@@ -294,13 +294,17 @@ export default function PostDetailPage() {
       <ScrollView style={styles.content}>
         {/* 作者信息 */}
         <View style={styles.authorRow}>
-          {post.authorAvatarUrl ? (
-            <Image source={{ uri: post.authorAvatarUrl }} style={styles.avatar} />
-          ) : (
-            <View style={styles.avatarPlaceholder} />
-          )}
+          <Pressable onPress={() => router.push(`/user/${post.authorUserId}` as any)}>
+            {post.authorAvatarUrl ? (
+              <Image source={{ uri: post.authorAvatarUrl }} style={styles.avatar} />
+            ) : (
+              <View style={styles.avatarPlaceholder} />
+            )}
+          </Pressable>
           <View style={styles.authorInfo}>
-            <Text style={styles.authorName}>{post.authorNickname}</Text>
+            <Pressable onPress={() => router.push(`/user/${post.authorUserId}` as any)}>
+              <Text style={styles.authorName}>{post.authorNickname}</Text>
+            </Pressable>
             <Text style={styles.postTime}>{new Date(post.createdAt).toLocaleDateString()}</Text>
           </View>
         </View>

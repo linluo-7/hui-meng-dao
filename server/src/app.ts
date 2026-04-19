@@ -14,6 +14,7 @@ import { relationsRouter } from './routes/relations.js';
 import { rolesRouter } from './routes/roles.js';
 import { socialRouter } from './routes/social.js';
 import { worksRouter } from './routes/works.js';
+import { usersRouter } from './routes/users.js';
 
 // 确保上传目录存在
 mkdirSync('uploads/avatars', { recursive: true });
@@ -43,6 +44,7 @@ app.use('/api/works', authMiddleware, worksRouter);
 app.use('/api/notifications', authMiddleware, notificationsRouter);
 app.use('/api/roles', rolesRouter);
 app.use('/api', relationsRouter);
+app.use('/api/users', authMiddleware, usersRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const message = err instanceof Error ? err.message : 'Unknown error';

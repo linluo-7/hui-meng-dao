@@ -248,12 +248,16 @@ export default function MePage() {
             <Text style={styles.ip}>IP属地：{profile?.ipLocation ?? '未知'}</Text>
             <Text style={styles.account}>账号：{profile?.id ?? '-'}</Text>
             <View style={styles.stats}>
-              <Text style={styles.statText}>
-                <Text style={styles.statNum}>{profile?.followersCount ?? 0}</Text> 粉丝
-              </Text>
-              <Text style={styles.statText}>
-                <Text style={styles.statNum}>{profile?.followingCount ?? 0}</Text> 关注
-              </Text>
+              <Pressable onPress={() => profile?.id && router.push(`/user/${profile.id}/followers` as any)}>
+                <Text style={styles.statText}>
+                  <Text style={styles.statNum}>{profile?.followersCount ?? 0}</Text> 粉丝
+                </Text>
+              </Pressable>
+              <Pressable onPress={() => profile?.id && router.push(`/user/${profile.id}/following` as any)}>
+                <Text style={styles.statText}>
+                  <Text style={styles.statNum}>{profile?.followingCount ?? 0}</Text> 关注
+                </Text>
+              </Pressable>
               <Text style={styles.statText}>
                 <Text style={styles.statNum}>{profile?.likesAndFavoritesCount ?? 0}</Text> 收藏和获赞
               </Text>

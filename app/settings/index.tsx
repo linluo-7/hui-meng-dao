@@ -28,6 +28,7 @@ export default function SettingsPage() {
           <Cell title="通用设置" onPress={() => toast('敬请期待')} />
           <Cell title="通知设置" onPress={() => toast('敬请期待')} />
           <Cell title="隐私设置" onPress={() => toast('敬请期待')} />
+          <Cell title="黑名单管理" onPress={() => router.push('/settings/blocklist' as any)} />
           <Cell title="清理缓存" onPress={() => toast('敬请期待')} />
           <Cell title="收货地址" onPress={() => toast('敬请期待')} />
         </Group>

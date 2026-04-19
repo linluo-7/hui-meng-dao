@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, SafeAreaView, StyleSheet, Text, View, RefreshControl } from 'react-native';
+import { useRouter } from 'expo-router';
 
 import { toast } from '@/src/components/toast';
 import { notificationsApi } from '@/src/services/notificationsApi';
@@ -42,6 +43,7 @@ function getNotificationLink(item: Notification) {
 }
 
 export default function NotificationsPage() {
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>('comment');
   const [items, setItems] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
@@ -88,11 +90,23 @@ export default function NotificationsPage() {
   };
 
   const handleMarkRead = async (item: Notification) => {
-    if (item.is_read) return;
-    try {
-      await notificationsApi.markRead(item.id);
-      setItems(prev => prev.map(n => n.id === item.id ? { ...n, is_read: 1 } : n));
-    } catch {}
+    if (!item.is_read) {
+      try {
+        await notificationsApi.markRead(item.id);
+        setItems(prev => prev.map(n => n.id === item.id ? { ...n, is_read: 1 } : n));
+      } catch {}
+    }
+    // 跳转到对应页面
+    const d = item.data;
+    if (d?.postId) {
+      router.push(`/posts/${d.postId}` as any);
+    } else if (d?.roleId) {
+      router.push(`/roles/${d.roleId}` as any);
+    } else if (d?.workId) {
+      router.push(`/works/${d.workId}` as any);
+    } else if (d?.fromUserId) {
+      router.push(`/user/${d.fromUserId}` as any);
+    }
   };
 
   const handleMarkAllRead = async () => {
