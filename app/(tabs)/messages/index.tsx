@@ -35,6 +35,8 @@ function MsgRow({ item }: { item: MsgItem }) {
 function SuggestUserRow({ user }: { user: UserSummary }) {
   const [following, setFollowing] = useState(user.is_following === 1);
   const [loading, setLoading] = useState(false);
+  const { createThread } = useMessagesStore();
+  const router = useRouter();
 
   const handleFollow = useCallback(async () => {
     setLoading(true);
@@ -70,13 +72,28 @@ function SuggestUserRow({ user }: { user: UserSummary }) {
           {user.bio ?? `粉丝 ${user.followers_count}`}
         </Text>
       </View>
-      <Pressable
-        style={[styles.followBtn, following && styles.followBtnFollowing]}
-        onPress={handleFollow}
-        disabled={loading}
-      >
-        <Text style={styles.followText}>{following ? '已关注' : '+ 关注'}</Text>
-      </Pressable>
+      <View style={styles.rowActions}>
+        <Pressable
+          style={[styles.followBtn, following && styles.followBtnFollowing]}
+          onPress={handleFollow}
+          disabled={loading}
+        >
+          <Text style={styles.followText}>{following ? '已关注' : '+ 关注'}</Text>
+        </Pressable>
+        <Pressable
+          style={styles.dmBtn}
+          onPress={async () => {
+            try {
+              const thread = await createThread(user.id);
+              router.push(`/dm/${thread.id}` as any);
+            } catch {
+              toast('发起私信失败');
+            }
+          }}
+        >
+          <Text style={styles.dmBtnText}>私信</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -144,18 +161,18 @@ export default function MessagesHomePage() {
         {tab === '消息' ? (
           <>
             <View style={styles.quickRow}>
-              <View style={styles.quickItem}>
+              <Pressable style={styles.quickItem} onPress={() => router.push('/notifications' as any)}>
                 <Image source={require('../../../assets/images/msg-like-fav.png')} style={styles.quickIconImg} />
                 <Text style={styles.quickLabel}>赞和收藏</Text>
-              </View>
-              <View style={styles.quickItem}>
+              </Pressable>
+              <Pressable style={styles.quickItem} onPress={() => router.push('/notifications' as any)}>
                 <Image source={require('../../../assets/images/msg-new-follow.png')} style={styles.quickIconImg} />
                 <Text style={styles.quickLabel}>新增关注</Text>
-              </View>
-              <View style={styles.quickItem}>
+              </Pressable>
+              <Pressable style={styles.quickItem} onPress={() => router.push('/notifications' as any)}>
                 <Image source={require('../../../assets/images/msg-reply-at.png')} style={styles.quickIconImg} />
                 <Text style={styles.quickLabel}>回复和@</Text>
-              </View>
+              </Pressable>
             </View>
 
             <View style={styles.listWrap}>
@@ -185,7 +202,7 @@ export default function MessagesHomePage() {
         ) : (
           <View style={styles.listWrap}>
             {listItems.map((item) => (
-              <RowItem key={item.id} item={item} />
+              <MsgRow key={item.id} item={item} />
             ))}
           </View>
         )}
@@ -287,6 +304,9 @@ const styles = StyleSheet.create({
   },
   followBtnFollowing: { backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#D1D5DB' },
   followText: { color: '#fff', fontSize: scale(28 / 2), fontWeight: '700' },
+  rowActions: { flexDirection: 'row', gap: scale(6) },
+  dmBtn: { height: verticalScale(30), borderRadius: 999, backgroundColor: '#F3F4F6', paddingHorizontal: scale(10), alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#D1D5DB' },
+  dmBtnText: { color: '#374151', fontSize: scale(13), fontWeight: '600' },
   errorText: { color: '#B91C1C', marginTop: verticalScale(8), fontSize: scale(12) },
   loadingText: { color: '#9CA3AF', fontSize: 13, paddingVertical: 12, textAlign: 'center' },
 });

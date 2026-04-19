@@ -346,7 +346,20 @@ export default function PostDetailPage() {
                 )}
                 <View style={styles.commentContent}>
                   <Text style={styles.commentAuthor}>{comment.authorNickname}</Text>
-                  <Text style={styles.commentText}>{comment.content}</Text>
+                  {comment.content && (
+                    <Text style={styles.commentText}>
+                      {comment.content.split(/(@\S+)/g).map((part, i) =>
+                        part.startsWith('@') ? (
+                          <Text key={i} style={styles.mentionHighlight}>{part}</Text>
+                        ) : (
+                          part
+                        )
+                      )}
+                    </Text>
+                  )}
+                  {comment.imageUrl && (
+                    <Image source={{ uri: comment.imageUrl }} style={styles.commentImage} />
+                  )}
                   <Text style={styles.commentTime}>{new Date(comment.createdAt).toLocaleDateString()}</Text>
                 </View>
               </View>
@@ -497,6 +510,8 @@ const styles = StyleSheet.create({
   commentAuthor: { fontSize: scale(14), fontWeight: '600', color: '#111827' },
   commentText: { fontSize: scale(14), color: '#374151', marginTop: verticalScale(4) },
   commentTime: { fontSize: scale(12), color: '#9CA3AF', marginTop: verticalScale(4) },
+  commentImage: { width: scale(80), height: scale(80), borderRadius: scale(8), marginTop: verticalScale(6), backgroundColor: '#D9D9D9' },
+  mentionHighlight: { color: '#2563EB', fontWeight: '700' },
   commentModalMask: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   commentModalSheet: { backgroundColor: '#FFFFFF', padding: scale(16), paddingBottom: verticalScale(34) },
   commentInputRow: { flexDirection: 'row', alignItems: 'flex-end' },

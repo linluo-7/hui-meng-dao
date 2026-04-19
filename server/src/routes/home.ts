@@ -8,7 +8,7 @@ homeRouter.get('/feed', async (req, res) => {
   const tab = String(req.query.tab ?? '发现');
   const userId = (req as any).userId as string | undefined;
 
-  // 查询帖子
+  // 查询公开帖子（过滤私密）
   const [postRows] = await pool.query<any[]>(
     `SELECT p.*,
       u.nickname as author_nickname,
@@ -16,6 +16,7 @@ homeRouter.get('/feed', async (req, res) => {
       (SELECT COUNT(*) FROM post_likes WHERE post_id = p.id AND user_id = ?) as is_liked
      FROM posts p
      LEFT JOIN users u ON p.author_user_id = u.id
+     WHERE p.is_public = 1
      ORDER BY p.created_at DESC LIMIT 20`,
     [userId || ''],
   );
